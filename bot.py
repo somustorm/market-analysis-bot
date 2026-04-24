@@ -32,7 +32,8 @@ def fetch_yf(symbol):
         if df is None or df.empty or len(df) < 2:
             return None
         return df
-    except:
+    except Exception as e:
+        print(f"{symbol} fetch error:", e)
         return None
 
 
@@ -57,7 +58,6 @@ def fetch_fii_data():
         latest = df.iloc[0]
 
         fii_net = float(latest["fiiIdxFutBuyVal"]) - float(latest["fiiIdxFutSellVal"])
-
         return fii_net
 
     except Exception as e:
@@ -79,10 +79,15 @@ def safe_change(df):
 
 
 # -----------------------------
-# DATA
+# DATA (FIXED - NO OR LOGIC)
 # -----------------------------
 def get_data():
-    nifty = fetch_yf("^NSEI") or fetch_yf("NIFTYBEES.NS")
+    nifty = fetch_yf("^NSEI")
+
+    if nifty is None:
+        print("⚠️ Falling back to NIFTYBEES")
+        nifty = fetch_yf("NIFTYBEES.NS")
+
     crude = fetch_yf("CL=F")
     btc = fetch_yf("BTC-USD")
     vix = fetch_yf("^INDIAVIX")
@@ -104,40 +109,30 @@ def analyze(nifty, crude, btc, vix, fii):
     v = safe_change(vix)
 
     if None in [n, c, b, v] or fii is None:
-        return None, n, c, b, v, fii
+        return None, n, c, b, v, fii, False
 
-    # -----------------
-    # CORE LOGIC
-    # -----------------
-
-    # NIFTY momentum
+    # NIFTY
     score += 1 if n > 0 else -1
 
-    # Crude inflation pressure
+    # CRUDE
     score += -1 if c > 0 else 1
 
-    # BTC risk appetite
+    # BTC
     score += 1 if b > 0 else -1
 
-    # VIX spike (risk off)
+    # VIX
     if v > 0.05:
         score -= 2
     elif v < -0.03:
         score += 1
 
-    # FII positioning
+    # FII
     if fii > 0:
         score += 2
     else:
         score -= 2
 
-    # -----------------
-    # CRASH DETECTION
-    # -----------------
-    crash = False
-
-    if v > 0.08 and fii < 0 and n < 0:
-        crash = True
+    crash = (v > 0.08 and fii < 0 and n < 0)
 
     return score, n, c, b, v, fii, crash
 
@@ -165,7 +160,15 @@ def generate_report():
     result = analyze(nifty, crude, btc, vix, fii)
 
     if result[0] is None:
-        return "⚠️ Data issue — skipping signal"
+        return f"""⚠️ Data Issue
+
+NIFTY: {result[1]}
+CRUDE: {result[2]}
+BTC: {result[3]}
+VIX: {result[4]}
+
+❌ Skipping signal
+"""
 
     score, n, c, b, v, fii, crash = result
 
