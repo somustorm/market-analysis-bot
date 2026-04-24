@@ -46,7 +46,7 @@ def analyze_macro(data):
     us10y, us10y_chg = get_change(data["us10y"])
 
     score = 0
-    if crude_chg and crude_chg > 0: score -= 1
+    if not crude_chg.empty and crude_chg.iloc[-1] > 0: score -= 1
     if dxy_chg and dxy_chg > 0: score -= 1
     if us10y_chg and us10y_chg > 0: score -= 1
 
