@@ -38,6 +38,19 @@ def fetch_yf(symbol):
 
 
 # -----------------------------
+# SAFE FALLBACK (CRITICAL FIX)
+# -----------------------------
+def fetch_with_fallback(primary, fallback=None):
+    data = fetch_yf(primary)
+
+    if data is None and fallback:
+        print(f"⚠️ Fallback: {primary} → {fallback}")
+        data = fetch_yf(fallback)
+
+    return data
+
+
+# -----------------------------
 # FII
 # -----------------------------
 def fetch_fii_data():
@@ -55,7 +68,8 @@ def fetch_fii_data():
         latest = df.iloc[0]
 
         return float(latest["fiiIdxFutBuyVal"]) - float(latest["fiiIdxFutSellVal"])
-    except:
+    except Exception as e:
+        print("FII error:", e)
         return None
 
 
@@ -63,6 +77,9 @@ def fetch_fii_data():
 # CHANGE + POINTS
 # -----------------------------
 def get_change(df):
+    if df is None:
+        return None, None
+
     try:
         close = df["Close"]
         pct = float(close.pct_change().iloc[-1])
@@ -80,19 +97,16 @@ def get_change(df):
 # DATA
 # -----------------------------
 def get_data():
-    nifty = fetch_yf("^NSEI")
-    if nifty is None:
-        nifty = fetch_yf("NIFTYBEES.NS")
+    nifty = fetch_with_fallback("^NSEI", "NIFTYBEES.NS")
+    banknifty = fetch_with_fallback("^NSEBANK")
+    sensex = fetch_with_fallback("^BSESN", "SENSEXBEES.NS")
 
-    banknifty = fetch_yf("^NSEBANK")
-    sensex = fetch_yf("^BSESN") or fetch_yf("SENSEXBEES.NS")
+    crude = fetch_with_fallback("CL=F")
+    btc = fetch_with_fallback("BTC-USD")
+    vix = fetch_with_fallback("^INDIAVIX")
 
-    crude = fetch_yf("CL=F")
-    btc = fetch_yf("BTC-USD")
-    vix = fetch_yf("^INDIAVIX")
-
-    dow = fetch_yf("^DJI")
-    nasdaq = fetch_yf("^IXIC")
+    dow = fetch_with_fallback("^DJI")
+    nasdaq = fetch_with_fallback("^IXIC")
 
     fii = fetch_fii_data()
 
@@ -193,7 +207,7 @@ VIX: {fmt(*v)}
 DOW: {fmt(*d)}
 NASDAQ: {fmt(*nq)}
 
-FII: {fmt_fii(fii)} {"(NA)" if fii is None else ""}
+FII: {fmt_fii(fii)}
 
 Bias: {bias}
 Score: {score}
