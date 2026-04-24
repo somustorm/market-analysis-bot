@@ -1,6 +1,7 @@
 import requests
 import os
 import yfinance as yf
+import math
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -11,7 +12,7 @@ def send(msg):
         "chat_id": CHAT_ID,
         "text": msg
     })
-    print(res.text)
+    print(res.text)  # Debug log
 
 def get_data():
     nifty = yf.download("^NSEI", period="2d", interval="1d")
@@ -22,10 +23,18 @@ def get_data():
 def analyze(nifty, crude, btc):
     score = 0
 
-    nifty_chg = float(nifty["Close"].pct_change().iloc[-1])
-    crude_chg = float(crude["Close"].pct_change().iloc[-1])
-    btc_chg = float(btc["Close"].pct_change().iloc[-1])
+    try:
+        nifty_chg = float(nifty["Close"].pct_change().iloc[-1])
+        crude_chg = float(crude["Close"].pct_change().iloc[-1])
+        btc_chg = float(btc["Close"].pct_change().iloc[-1])
+    except:
+        return None, None, None, None
 
+    # Validate NaN
+    if any(math.isnan(x) for x in [nifty_chg, crude_chg, btc_chg]):
+        return None, nifty_chg, crude_chg, btc_chg
+
+    # Scoring logic
     if nifty_chg < 0:
         score -= 1
     else:
@@ -46,10 +55,23 @@ def analyze(nifty, crude, btc):
 def generate_report():
     nifty, crude, btc = get_data()
 
+    # Data fetch validation
     if nifty.empty or crude.empty or btc.empty:
         return "⚠️ Data fetch failed"
 
     score, n, c, b = analyze(nifty, crude, btc)
+
+    # Handle invalid data
+    if score is None:
+        return f"""
+⚠️ Data Issue Detected
+
+NIFTY: {n}
+CRUDE: {c}
+BTC: {b}
+
+❌ Skipping signal due to invalid data
+"""
 
     bias = "BULLISH" if score > 0 else "BEARISH"
 
