@@ -24,7 +24,7 @@ def send(msg):
 
 
 # -----------------------------
-# YFINANCE FETCH
+# FETCH
 # -----------------------------
 def fetch_yf(symbol):
     try:
@@ -33,20 +33,17 @@ def fetch_yf(symbol):
             return None
         return df
     except Exception as e:
-        print(f"{symbol} fetch error:", e)
+        print(f"{symbol} error:", e)
         return None
 
 
 # -----------------------------
-# FII DATA (PROXY)
+# FII
 # -----------------------------
 def fetch_fii_data():
     try:
         url = "https://www.nseindia.com/api/fiidiiTradeReact"
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
 
         session = requests.Session()
         session.get("https://www.nseindia.com", headers=headers)
@@ -57,91 +54,112 @@ def fetch_fii_data():
         df = pd.DataFrame(data["data"])
         latest = df.iloc[0]
 
-        fii_net = float(latest["fiiIdxFutBuyVal"]) - float(latest["fiiIdxFutSellVal"])
-        return fii_net
-
-    except Exception as e:
-        print("FII fetch error:", e)
-        return None
-
-
-# -----------------------------
-# SAFE CHANGE
-# -----------------------------
-def safe_change(df):
-    try:
-        val = float(df["Close"].pct_change().iloc[-1])
-        if math.isnan(val):
-            return None
-        return val
+        return float(latest["fiiIdxFutBuyVal"]) - float(latest["fiiIdxFutSellVal"])
     except:
         return None
 
 
 # -----------------------------
-# DATA (FIXED - NO OR LOGIC)
+# CHANGE + POINTS
+# -----------------------------
+def get_change(df):
+    try:
+        close = df["Close"]
+        pct = float(close.pct_change().iloc[-1])
+        pts = float(close.iloc[-1] - close.iloc[-2])
+
+        if math.isnan(pct):
+            return None, None
+
+        return pct, pts
+    except:
+        return None, None
+
+
+# -----------------------------
+# DATA
 # -----------------------------
 def get_data():
     nifty = fetch_yf("^NSEI")
-
     if nifty is None:
-        print("⚠️ Falling back to NIFTYBEES")
         nifty = fetch_yf("NIFTYBEES.NS")
+
+    banknifty = fetch_yf("^NSEBANK")
+    sensex = fetch_yf("^BSESN") or fetch_yf("SENSEXBEES.NS")
 
     crude = fetch_yf("CL=F")
     btc = fetch_yf("BTC-USD")
     vix = fetch_yf("^INDIAVIX")
 
+    dow = fetch_yf("^DJI")
+    nasdaq = fetch_yf("^IXIC")
+
     fii = fetch_fii_data()
 
-    return nifty, crude, btc, vix, fii
+    return nifty, banknifty, sensex, crude, btc, vix, dow, nasdaq, fii
 
 
 # -----------------------------
 # ENGINE
 # -----------------------------
-def analyze(nifty, crude, btc, vix, fii):
+def analyze(data):
+    (
+        nifty, banknifty, sensex,
+        crude, btc, vix,
+        dow, nasdaq, fii
+    ) = data
+
     score = 0
 
-    n = safe_change(nifty)
-    c = safe_change(crude)
-    b = safe_change(btc)
-    v = safe_change(vix)
+    n, n_pts = get_change(nifty)
+    bn, bn_pts = get_change(banknifty)
+    s, s_pts = get_change(sensex)
+    c, c_pts = get_change(crude)
+    b, b_pts = get_change(btc)
+    v, v_pts = get_change(vix)
+    d, d_pts = get_change(dow)
+    nq, nq_pts = get_change(nasdaq)
 
-    if None in [n, c, b, v] or fii is None:
-        return None, n, c, b, v, fii, False
+    if None in [n, bn, s, c, b, v]:
+        return None
 
-    # NIFTY
+    # Core scoring
     score += 1 if n > 0 else -1
+    score += 1 if bn > 0 else -1
+    score += 1 if s > 0 else -1
 
-    # CRUDE
     score += -1 if c > 0 else 1
-
-    # BTC
     score += 1 if b > 0 else -1
 
-    # VIX
     if v > 0.05:
         score -= 2
     elif v < -0.03:
         score += 1
 
-    # FII
-    if fii > 0:
-        score += 2
-    else:
-        score -= 2
+    if d is not None:
+        score += 1 if d > 0 else -1
 
-    crash = (v > 0.08 and fii < 0 and n < 0)
+    if nq is not None:
+        score += 1 if nq > 0 else -1
 
-    return score, n, c, b, v, fii, crash
+    if fii is not None:
+        score += 2 if fii > 0 else -2
+
+    crash = (v is not None and v > 0.08 and n < 0)
+
+    return score, (n, n_pts), (bn, bn_pts), (s, s_pts), \
+           (c, c_pts), (b, b_pts), (v, v_pts), \
+           (d, d_pts), (nq, nq_pts), fii, crash
 
 
 # -----------------------------
 # FORMAT
 # -----------------------------
-def fmt(x):
-    return f"{x:.2%}" if isinstance(x, float) else "NA"
+def fmt(pct, pts):
+    if pct is None or pts is None:
+        return "NA"
+    sign = "+" if pts > 0 else ""
+    return f"{sign}{pts:.0f} ({pct*100:.2f}%)"
 
 
 def fmt_fii(x):
@@ -152,36 +170,30 @@ def fmt_fii(x):
 # REPORT
 # -----------------------------
 def generate_report():
-    nifty, crude, btc, vix, fii = get_data()
+    data = get_data()
 
-    if any(x is None for x in [nifty, crude, btc, vix]):
-        return "⚠️ Data fetch failed"
+    result = analyze(data)
+    if result is None:
+        return "⚠️ Data issue"
 
-    result = analyze(nifty, crude, btc, vix, fii)
-
-    if result[0] is None:
-        return f"""⚠️ Data Issue
-
-NIFTY: {result[1]}
-CRUDE: {result[2]}
-BTC: {result[3]}
-VIX: {result[4]}
-
-❌ Skipping signal
-"""
-
-    score, n, c, b, v, fii, crash = result
+    score, n, bn, s, c, b, v, d, nq, fii, crash = result
 
     bias = "BULLISH" if score > 0 else "BEARISH"
 
     msg = f"""📊 Market Engine
 
-NIFTY: {fmt(n)}
-CRUDE: {fmt(c)}
-BTC: {fmt(b)}
-VIX: {fmt(v)}
+NIFTY: {fmt(*n)}
+BANKNIFTY: {fmt(*bn)}
+SENSEX: {fmt(*s)}
 
-FII: {fmt_fii(fii)}
+CRUDE: {fmt(*c)}
+BTC: {fmt(*b)}
+VIX: {fmt(*v)}
+
+DOW: {fmt(*d)}
+NASDAQ: {fmt(*nq)}
+
+FII: {fmt_fii(fii)} {"(NA)" if fii is None else ""}
 
 Bias: {bias}
 Score: {score}
@@ -197,5 +209,4 @@ Score: {score}
 # MAIN
 # -----------------------------
 if __name__ == "__main__":
-    report = generate_report()
-    send(report)
+    send(generate_report())
