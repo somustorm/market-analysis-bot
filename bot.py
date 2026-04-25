@@ -3,6 +3,9 @@ import os
 import yfinance as yf
 from datetime import datetime, timezone, timedelta
 
+# ===========================
+# CONFIG
+# ===========================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -14,13 +17,13 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # ===========================
 def send(msg):
     if not TOKEN or not CHAT_ID:
-        print("Missing Telegram config")
+        print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
         return
 
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print(res.text)
+        print("Telegram:", res.text)
     except Exception as e:
         print("Telegram error:", e)
 
@@ -77,6 +80,7 @@ def fmt(pct, pts):
 # ===========================
 def india():
 
+    # INDEX DATA
     nifty = fetch("^NSEI")
     bank = fetch("^NSEBANK")
     sensex = fetch("^BSESN")
@@ -89,15 +93,57 @@ def india():
     b_pdh, b_pdl, b_pivot = levels(bank)
     s_pdh, s_pdl, s_pivot = levels(sensex)
 
+    # ADR
+    hdfc = change(fetch("HDB"))
+    icici = change(fetch("IBN"))
+    infy = change(fetch("INFY"))
+    wipro = change(fetch("WIT"))
+
+    # GLOBAL
+    dow = change(fetch("^DJI"))
+    nasdaq = change(fetch("^IXIC"))
+
+    btc_df = fetch("BTC-USD")
+    btc_pct, _ = change(btc_df)
+
+    # COMMODITIES
     gold = change(fetch("GC=F"))
     silver = change(fetch("SI=F"))
     crude = change(fetch("CL=F"))
 
+    # BIAS
     bias = "BEARISH" if n_pct and n_pct < 0 else "BULLISH"
     condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
     trend = "Weak" if bias == "BEARISH" else "Strong"
 
-    # Support/Resistance
+    # ================= SCORE =================
+    score = 0
+
+    if n_pct:
+        score += -0.4 if n_pct < 0 else 0.4
+
+    if dow[0]:
+        score += -0.2 if dow[0] < 0 else 0.2
+
+    if btc_pct:
+        score += -0.2 if btc_pct < 0 else 0.2
+
+    if nasdaq[0]:
+        score += 0.1 if nasdaq[0] > 0 else -0.1
+
+    score = round(score, 2)
+
+    if score > 0.3:
+        score_bias = "BULLISH"
+        confidence = "HIGH"
+    elif score < -0.3:
+        score_bias = "BEARISH"
+        confidence = "HIGH"
+    else:
+        score_bias = "NEUTRAL"
+        confidence = "LOW"
+
+    # SUPPORT / RESISTANCE
     n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
     n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
 
@@ -122,6 +168,15 @@ Fed Speakers → 09–11 Apr | Evening
 India CPI → 12 Apr 2026 | 05:30 PM  
 
 👉 Event Risk: HIGH
+
+--------------------------------------------------
+
+🌐 ADR (Overnight Proxy)
+
+HDFC: {fmt(*hdfc)}  
+ICICI: {fmt(*icici)}  
+INFY: {fmt(*infy)}  
+WIPRO: {fmt(*wipro)}  
 
 --------------------------------------------------
 
@@ -162,6 +217,14 @@ Crude: {fmt(*crude)}
 
 Strong: IT, Pharma  
 Weak: Banking, Metals  
+
+--------------------------------------------------
+
+📊 SCORE MODEL
+
+Score: {score}  
+Bias: {score_bias}  
+Confidence: {confidence}  
 
 --------------------------------------------------
 
@@ -221,6 +284,7 @@ Breakdown = Close below + continuation
 🔗 MARKET ALIGNMENT
 
 India: {bias}  
+Score: {score_bias}  
 US: Mixed  
 BTC: Refer below  
 
@@ -231,12 +295,14 @@ BTC: Refer below
 🔥 ONLY TRADE:
 
 Sell near {n_pdh} IF rejection confirms  
+AND score supports downside  
+
 Else → No trade  
 
 ⚠️ If price stays inside range → Skip day  
 
 🧠 Rule:
-No confirmation → No entry
+Confluence > Prediction
 """
 
 
@@ -327,7 +393,6 @@ No breakout → No trade
 # MAIN
 # ===========================
 def main():
-
     print("BOT STARTED")
 
     try:
