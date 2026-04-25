@@ -39,18 +39,24 @@ def fetch(symbol):
 
 
 # ---------------------------
-# CHANGE (POINT + %)
+# CHANGE (SAFE SCALAR)
 # ---------------------------
 def change(df):
     if df is None:
         return None, None
 
     try:
-        c = df["Close"]
-        pct = round((c.iloc[-1] / c.iloc[-2] - 1) * 100, 2)
-        pts = int(round(c.iloc[-1] - c.iloc[-2], 0))
+        close = df["Close"]
+
+        last = float(close.iloc[-1])
+        prev = float(close.iloc[-2])
+
+        pct = round((last / prev - 1) * 100, 2)
+        pts = int(round(last - prev, 0))
+
         return pct, pts
-    except:
+    except Exception as e:
+        print("Change error:", e)
         return None, None
 
 
@@ -62,12 +68,15 @@ def levels(df):
         return None, None, None
 
     try:
-        h = int(df["High"].iloc[-2])
-        l = int(df["Low"].iloc[-2])
-        c = df["Close"].iloc[-2]
-        pivot = int(round((h + l + c) / 3, 0))
-        return h, l, pivot
-    except:
+        high = float(df["High"].iloc[-2])
+        low = float(df["Low"].iloc[-2])
+        close = float(df["Close"].iloc[-2])
+
+        pivot = (high + low + close) / 3
+
+        return int(high), int(low), int(round(pivot, 0))
+    except Exception as e:
+        print("Levels error:", e)
         return None, None, None
 
 
@@ -99,7 +108,13 @@ def india():
     crude = change(fetch("CL=F"))
     dxy = change(fetch("DX-Y.NYB"))
 
-    bias = "BEARISH" if n[0] is not None and n[0] < 0 else "BULLISH"
+    # SAFE BIAS (NO PANDAS ERROR)
+    if n[0] is None:
+        bias = "UNKNOWN"
+    elif float(n[0]) < 0:
+        bias = "BEARISH"
+    else:
+        bias = "BULLISH"
 
     msg = f"""🇮🇳 INDIA MARKET OUTLOOK
 
@@ -135,7 +150,12 @@ def us():
     crude = change(fetch("CL=F"))
     btc = change(fetch("BTC-USD"))
 
-    bias = "BEARISH" if nasdaq[0] is not None and nasdaq[0] < 0 else "BULLISH"
+    if nasdaq[0] is None:
+        bias = "UNKNOWN"
+    elif float(nasdaq[0]) < 0:
+        bias = "BEARISH"
+    else:
+        bias = "BULLISH"
 
     msg = f"""🌙 US MARKET PREP
 
@@ -155,7 +175,7 @@ Plan: {"Cautious / sell rallies" if bias=="BEARISH" else "Buy dips"}
 
 
 # ---------------------------
-# MAIN ROUTER (FIXED)
+# MAIN ROUTER (SAFE)
 # ---------------------------
 def main():
     now = datetime.now(IST)
@@ -163,7 +183,6 @@ def main():
 
     print(f"Current IST time: {now}")
 
-    # Scheduled runs
     if hour == 8:
         print("Running India report")
         send(india())
@@ -172,7 +191,6 @@ def main():
         print("Running US report")
         send(us())
 
-    # Manual run fallback
     else:
         print("Manual run → sending India report")
         send(india())
