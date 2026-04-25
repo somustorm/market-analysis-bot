@@ -16,12 +16,32 @@ def us():
 Asia: Mixed
 Europe: Flat
 
-📰 Macro Snapshot
+👉 Interpretation: Mixed global tone
+
+📰 Major News
+- Inflation concerns persist
+- Bond yields elevated
+- Tech sector showing strength
+- Oil easing slightly
+
+📅 Events (IST)
+CPI / Jobless Claims / Fed Speakers
+
+👉 Event Risk: HIGH
+
+--------------------------------------------------
+
+🇺🇸 US MARKET STRUCTURE
+
 DOW: {fmt(*dow)}
 NASDAQ: {fmt(*nasdaq)}
 S&P 500: {fmt(*spx)}
 
-🧠 Market Condition: MIXED
+🧠 Market Condition: MIXED / ROTATIONAL
+
+📊 Sector Strength
+Strong: Tech  
+Weak: Financials, Industrials  
 
 --------------------------------------------------
 
@@ -29,11 +49,14 @@ S&P 500: {fmt(*spx)}
 
 Move: {fmt(btc_pct, btc_pts)}
 
-PDH: {pdh}
-PDL: {pdl}
+PDH: {pdh}  
+PDL: {pdl}  
 Pivot: {pivot}
 
 Trend: {trend}
+
+Support: {pdl}  
+Resistance: {pdh}
 
 --------------------------------------------------
 
@@ -46,16 +69,23 @@ Buy above {pdh}
 Sell below {pdl}
 
 🟡 B-SETUP:
-Trade near Pivot ({pivot}) only with confirmation
+Trade near Pivot ({pivot}) with confirmation
 
 ❌ C-SETUP:
 Avoid mid-range trading
+
+🛑 Stop Loss:
+Opposite side of breakout
+
+📉 Invalidation:
+False breakout / rejection
 
 --------------------------------------------------
 
 ⚠️ Risk Flags
 - Event-driven volatility
 - Mixed global cues
+- Diverging sectors
 
 --------------------------------------------------
 
@@ -66,5 +96,8 @@ BTC Bias: {trend}
 
 Strategy:
 Trade breakouts only  
-Avoid noise  
+Avoid mid-range noise  
+
+🧠 Rule:
+Wait for confirmation → no prediction trades
 """
