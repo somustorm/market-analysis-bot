@@ -87,7 +87,6 @@ def fmt_clean(pct):
 # ===========================
 def india():
 
-    # INDEX
     nifty = fetch("^NSEI")
     bank = fetch("^NSEBANK")
     sensex = fetch("^BSESN")
@@ -141,6 +140,12 @@ def india():
     else:
         score_bias = "NEUTRAL"
         confidence = "LOW"
+
+    # ALIGNMENT STRENGTH (NEW)
+    if bias == score_bias:
+        alignment = "STRONG"
+    else:
+        alignment = "MODERATE"
 
     # SUPPORT / RES
     n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
@@ -296,6 +301,8 @@ Score: {score_bias}
 US: Mixed  
 BTC: Refer below  
 
+👉 Alignment Strength: {alignment}
+
 --------------------------------------------------
 
 🎯 FINAL CALL
@@ -304,6 +311,9 @@ BTC: Refer below
 
 Sell near {n_pdh} IF rejection confirms  
 AND score supports downside  
+
+⚠️ Event Day Adjustment:
+Prefer A-setup only  
 
 Else → No trade  
 
@@ -368,6 +378,12 @@ Breakdown → above PDL
 
 --------------------------------------------------
 
+❌ NO TRADE ZONE
+
+{pdl + 100 if pdl else 'NA'} – {pdh - 100 if pdh else 'NA'}
+
+--------------------------------------------------
+
 🛡️ RISK
 
 - Trade only breakout  
@@ -402,12 +418,8 @@ No breakout → No trade
 # ===========================
 def main():
     print("BOT STARTED")
-
-    try:
-        send(india())
-        send(us())
-    except Exception as e:
-        print("Error:", e)
+    send(india())
+    send(us())
 
 
 if __name__ == "__main__":
