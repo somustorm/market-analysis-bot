@@ -8,23 +8,24 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-
 # ---------------------------
 # TELEGRAM
 # ---------------------------
 def send(msg):
     if not TOKEN or not CHAT_ID:
-        print("Missing Telegram config")
+        print("❌ Missing Telegram config")
         return
+
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
+        res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
+        print("Telegram response:", res.text)
     except Exception as e:
         print("Telegram error:", e)
 
 
 # ---------------------------
-# DATA
+# FETCH DATA
 # ---------------------------
 def fetch(symbol):
     try:
@@ -37,9 +38,13 @@ def fetch(symbol):
         return None
 
 
+# ---------------------------
+# CHANGE (POINT + %)
+# ---------------------------
 def change(df):
     if df is None:
         return None, None
+
     try:
         c = df["Close"]
         pct = round((c.iloc[-1] / c.iloc[-2] - 1) * 100, 2)
@@ -49,9 +54,13 @@ def change(df):
         return None, None
 
 
+# ---------------------------
+# LEVELS (PDH / PDL / Pivot)
+# ---------------------------
 def levels(df):
     if df is None:
         return None, None, None
+
     try:
         h = int(df["High"].iloc[-2])
         l = int(df["Low"].iloc[-2])
@@ -62,6 +71,9 @@ def levels(df):
         return None, None, None
 
 
+# ---------------------------
+# FORMAT
+# ---------------------------
 def fmt(pct, pts):
     if pct is None:
         return "NA"
@@ -70,9 +82,10 @@ def fmt(pct, pts):
 
 
 # ---------------------------
-# INDIA REPORT (AM)
+# INDIA REPORT
 # ---------------------------
 def india():
+
     df_n = fetch("^NSEI")
     df_bn = fetch("^NSEBANK")
     df_s = fetch("^BSESN")
@@ -86,9 +99,9 @@ def india():
     crude = change(fetch("CL=F"))
     dxy = change(fetch("DX-Y.NYB"))
 
-    bias = "BEARISH" if n[0] and n[0] < 0 else "BULLISH"
+    bias = "BEARISH" if n[0] is not None and n[0] < 0 else "BULLISH"
 
-    return f"""🇮🇳 INDIA MARKET OUTLOOK
+    msg = f"""🇮🇳 INDIA MARKET OUTLOOK
 
 NIFTY: {fmt(*n)}
 BANKNIFTY: {fmt(*bn)}
@@ -107,11 +120,14 @@ Dollar: {fmt(*dxy)}
 Plan: {"Sell on rise" if bias=="BEARISH" else "Buy dips"}
 """
 
+    return msg
+
 
 # ---------------------------
-# US REPORT (PM)
+# US REPORT
 # ---------------------------
 def us():
+
     dow = change(fetch("^DJI"))
     nasdaq = change(fetch("^IXIC"))
     spx = change(fetch("^GSPC"))
@@ -119,9 +135,9 @@ def us():
     crude = change(fetch("CL=F"))
     btc = change(fetch("BTC-USD"))
 
-    bias = "BEARISH" if nasdaq[0] and nasdaq[0] < 0 else "BULLISH"
+    bias = "BEARISH" if nasdaq[0] is not None and nasdaq[0] < 0 else "BULLISH"
 
-    return f"""🌙 US MARKET PREP
+    msg = f"""🌙 US MARKET PREP
 
 DOW: {fmt(*dow)}
 NASDAQ: {fmt(*nasdaq)}
@@ -135,21 +151,35 @@ BTC: {fmt(*btc)}
 Plan: {"Cautious / sell rallies" if bias=="BEARISH" else "Buy dips"}
 """
 
+    return msg
+
 
 # ---------------------------
-# ROUTER
+# MAIN ROUTER (FIXED)
 # ---------------------------
 def main():
     now = datetime.now(IST)
     hour = now.hour
 
+    print(f"Current IST time: {now}")
+
+    # Scheduled runs
     if hour == 8:
+        print("Running India report")
         send(india())
+
     elif hour in [18, 19]:
+        print("Running US report")
         send(us())
+
+    # Manual run fallback
     else:
-        print("Skip run")
+        print("Manual run → sending India report")
+        send(india())
 
 
+# ---------------------------
+# ENTRY
+# ---------------------------
 if __name__ == "__main__":
     main()
