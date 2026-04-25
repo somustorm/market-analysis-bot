@@ -3,16 +3,11 @@ import os
 import yfinance as yf
 import math
 import pandas as pd
+import time
 from datetime import datetime
 
-# =============================
-# VERSION
-# =============================
-VERSION = "v2.0-NSE-DATA"
+VERSION = "v2.1-STABLE-NSE"
 
-# =============================
-# CONFIG
-# =============================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -25,13 +20,12 @@ def send(msg):
         return
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print("Telegram:", res.text)
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
     except Exception as e:
         print("Telegram Error:", e)
 
 # =============================
-# YFINANCE FETCH (PRICE)
+# FETCH YFINANCE
 # =============================
 def fetch(symbol):
     try:
@@ -43,7 +37,7 @@ def fetch(symbol):
         return None
 
 # =============================
-# CHANGE + PRICE
+# SAFE CHANGE
 # =============================
 def get_change(df):
     if df is None:
@@ -64,75 +58,95 @@ def get_change(df):
 # =============================
 def calculate_pivot(df):
     try:
-        high = float(df["High"].iloc[-2])
-        low = float(df["Low"].iloc[-2])
-        close = float(df["Close"].iloc[-2])
-        return (high + low + close) / 3
+        h = float(df["High"].iloc[-2])
+        l = float(df["Low"].iloc[-2])
+        c = float(df["Close"].iloc[-2])
+        return (h + l + c) / 3
     except:
         return None
 
 # =============================
-# NSE OPTION CHAIN
+# NSE SESSION HELPER
+# =============================
+def get_nse_session():
+    session = requests.Session()
+    headers = {"User-Agent": "Mozilla/5.0"}
+    session.get("https://www.nseindia.com", headers=headers, timeout=5)
+    return session, headers
+
+# =============================
+# OPTION CHAIN (RETRY)
 # =============================
 def fetch_option_chain():
-    try:
-        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-        headers = {"User-Agent": "Mozilla/5.0"}
+    for attempt in range(3):
+        try:
+            session, headers = get_nse_session()
+            url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+            res = session.get(url, headers=headers, timeout=5)
 
-        session = requests.Session()
-        session.get("https://www.nseindia.com", headers=headers)
-        data = session.get(url, headers=headers).json()
+            if res.status_code != 200:
+                time.sleep(1)
+                continue
 
-        ce_oi = []
-        pe_oi = []
+            data = res.json()
 
-        for item in data["records"]["data"]:
-            if "CE" in item:
-                ce_oi.append(item["CE"]["openInterest"])
-            if "PE" in item:
-                pe_oi.append(item["PE"]["openInterest"])
+            ce_oi = []
+            pe_oi = []
 
-        max_call = max(ce_oi) if ce_oi else None
-        max_put = max(pe_oi) if pe_oi else None
+            for item in data["records"]["data"]:
+                if "CE" in item:
+                    ce_oi.append(item["CE"]["openInterest"])
+                if "PE" in item:
+                    pe_oi.append(item["PE"]["openInterest"])
 
-        total_call = sum(ce_oi)
-        total_put = sum(pe_oi)
+            if not ce_oi or not pe_oi:
+                return None, None, None
 
-        pcr = (total_put / total_call) if total_call != 0 else None
+            total_call = sum(ce_oi)
+            total_put = sum(pe_oi)
 
-        return max_call, max_put, pcr
+            pcr = total_put / total_call if total_call else None
 
-    except Exception as e:
-        print("Option chain error:", e)
-        return None, None, None
+            return max(ce_oi), max(pe_oi), pcr
+
+        except Exception as e:
+            print("Option chain error:", e)
+            time.sleep(1)
+
+    return None, None, None
 
 # =============================
-# NSE FII (INDEX FUTURES PROXY)
+# FII (RETRY)
 # =============================
 def fetch_fii():
-    try:
-        url = "https://www.nseindia.com/api/fiidiiTradeReact"
-        headers = {"User-Agent": "Mozilla/5.0"}
+    for attempt in range(3):
+        try:
+            session, headers = get_nse_session()
+            url = "https://www.nseindia.com/api/fiidiiTradeReact"
+            res = session.get(url, headers=headers, timeout=5)
 
-        session = requests.Session()
-        session.get("https://www.nseindia.com", headers=headers)
+            if res.status_code != 200:
+                time.sleep(1)
+                continue
 
-        data = session.get(url, headers=headers).json()
-        df = pd.DataFrame(data["data"])
+            data = res.json()
+            df = pd.DataFrame(data["data"])
 
-        latest = df.iloc[0]
+            latest = df.iloc[0]
 
-        buy = float(latest["fiiIdxFutBuyVal"])
-        sell = float(latest["fiiIdxFutSellVal"])
+            buy = float(latest["fiiIdxFutBuyVal"])
+            sell = float(latest["fiiIdxFutSellVal"])
 
-        return buy - sell
+            return buy - sell
 
-    except Exception as e:
-        print("FII error:", e)
-        return None
+        except Exception as e:
+            print("FII error:", e)
+            time.sleep(1)
+
+    return None
 
 # =============================
-# FORMATTERS
+# FORMAT
 # =============================
 def fmt(pct, pts):
     if pct is None or pts is None:
@@ -147,42 +161,35 @@ def fmt_pct(x):
     return f"{x*100:.2f}%"
 
 # =============================
-# CORE SCORING (4 SIGNALS ONLY)
+# SCORING
 # =============================
 def core_scoring(vix, fii, pcr, price, pivot):
     score = 0
     used = 0
 
-    try:
-        if vix is not None:
-            score += -0.30 if vix > 0 else 0.30
-            used += 1
+    if vix is not None:
+        score += -0.30 if vix > 0 else 0.30
+        used += 1
 
-        if fii is not None:
-            score += -0.30 if fii < 0 else 0.30
-            used += 1
+    if fii is not None:
+        score += -0.30 if fii < 0 else 0.30
+        used += 1
 
-        if pcr is not None:
-            score += -0.25 if pcr < 1 else 0.25
-            used += 1
+    if pcr is not None:
+        score += -0.25 if pcr < 1 else 0.25
+        used += 1
 
-        if price is not None and pivot is not None:
-            score += -0.15 if price < pivot else 0.15
-            used += 1
+    if price is not None and pivot is not None:
+        score += -0.15 if price < pivot else 0.15
+        used += 1
 
-        return round(score, 2), used
-
-    except:
-        return 0, 0
+    return round(score, 2), used
 
 # =============================
 # MAIN
 # =============================
 def generate_report():
 
-    print(f"🚀 Running {VERSION}")
-
-    # PRICE DATA
     nifty = fetch("^NSEI")
     banknifty = fetch("^NSEBANK")
     sensex = fetch("^BSESN")
@@ -190,7 +197,6 @@ def generate_report():
     crude = fetch("CL=F")
     btc = fetch("BTC-USD")
 
-    # CHANGES
     n_pct, n_pts, n_price = get_change(nifty)
     bn_pct, bn_pts, _ = get_change(banknifty)
     s_pct, s_pts, _ = get_change(sensex)
@@ -200,17 +206,14 @@ def generate_report():
 
     # VIX FILTER
     if vix_pct is not None and abs(vix_pct) > 0.04:
-        print("⚠️ VIX abnormal → ignored")
         vix_pct = None
 
     # NSE DATA
     max_call, max_put, pcr = fetch_option_chain()
     fii = fetch_fii()
 
-    # PIVOT
     pivot = calculate_pivot(nifty)
 
-    # SCORE
     score, used = core_scoring(vix_pct, fii, pcr, n_price, pivot)
 
     if abs(score) > 0.6:
@@ -222,7 +225,6 @@ def generate_report():
 
     bias = "BULLISH" if score > 0 else "BEARISH"
 
-    # MESSAGE
     msg = f"""
 📊 MARKET UPDATE
 
