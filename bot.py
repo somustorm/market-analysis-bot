@@ -55,11 +55,17 @@ def change(df):
         return None, None
 
 
-def fmt_clean(pct):
-    if pct is None:
-        return "NA"
-    sign = "+" if pct > 0 else ""
-    return f"{sign}{pct}%"
+def levels(df):
+    if df is None:
+        return None, None, None
+    try:
+        h = float(df["High"].iloc[-2])
+        l = float(df["Low"].iloc[-2])
+        c = float(df["Close"].iloc[-2])
+        pivot = (h + l + c) / 3
+        return int(h), int(l), int(round(pivot, 0))
+    except:
+        return None, None, None
 
 
 def fmt(pct, pts):
@@ -69,11 +75,19 @@ def fmt(pct, pts):
     return f"{sign}{pts} ({pct}%)"
 
 
+def fmt_clean(pct):
+    if pct is None:
+        return "NA"
+    sign = "+" if pct > 0 else ""
+    return f"{sign}{pct}%"
+
+
 # ===========================
 # INDIA REPORT
 # ===========================
 def india():
 
+    # INDEX
     nifty = fetch("^NSEI")
     bank = fetch("^NSEBANK")
     sensex = fetch("^BSESN")
@@ -81,18 +95,6 @@ def india():
     n_pct, n_pts = change(nifty)
     b_pct, b_pts = change(bank)
     s_pct, s_pts = change(sensex)
-
-    def levels(df):
-        if df is None:
-            return None, None, None
-        try:
-            h = float(df["High"].iloc[-2])
-            l = float(df["Low"].iloc[-2])
-            c = float(df["Close"].iloc[-2])
-            pivot = (h + l + c) / 3
-            return int(h), int(l), int(round(pivot, 0))
-        except:
-            return None, None, None
 
     n_pdh, n_pdl, n_pivot = levels(nifty)
     b_pdh, b_pdl, b_pivot = levels(bank)
@@ -104,13 +106,11 @@ def india():
     infy_pct, _ = change(fetch("INFY"))
     wipro_pct, _ = change(fetch("WIT"))
 
-    # ADR interpretation
     banking_bias = "WEAK" if (icici_pct and icici_pct < 0) else "MIXED"
 
     # GLOBAL
     dow = change(fetch("^DJI"))
     nasdaq = change(fetch("^IXIC"))
-
     btc_pct, _ = change(fetch("BTC-USD"))
 
     # COMMODITIES
@@ -118,21 +118,17 @@ def india():
     silver = change(fetch("SI=F"))
     crude = change(fetch("CL=F"))
 
+    # BIAS
     bias = "BEARISH" if n_pct and n_pct < 0 else "BULLISH"
     condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
     trend = "Weak" if bias == "BEARISH" else "Strong"
 
-    # ================= SCORE =================
+    # SCORE
     score = 0
-
-    if n_pct:
-        score += -0.4 if n_pct < 0 else 0.4
-    if dow[0]:
-        score += -0.2 if dow[0] < 0 else 0.2
-    if btc_pct:
-        score += -0.2 if btc_pct < 0 else 0.2
-    if nasdaq[0]:
-        score += 0.1 if nasdaq[0] > 0 else -0.1
+    if n_pct: score += -0.4 if n_pct < 0 else 0.4
+    if dow[0]: score += -0.2 if dow[0] < 0 else 0.2
+    if btc_pct: score += -0.2 if btc_pct < 0 else 0.2
+    if nasdaq[0]: score += 0.1 if nasdaq[0] > 0 else -0.1
 
     score = round(score, 2)
 
@@ -146,13 +142,11 @@ def india():
         score_bias = "NEUTRAL"
         confidence = "LOW"
 
-    # SUPPORT / RESISTANCE
+    # SUPPORT / RES
     n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
     n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
-
     b_support = f"{b_pdl} / {b_pdl - 400 if b_pdl else 'NA'}"
     b_resist = f"{b_pdh} / {b_pdh + 400 if b_pdh else 'NA'}"
-
     s_support = f"{s_pdl} / {s_pdl - 500 if s_pdl else 'NA'}"
     s_resist = f"{s_pdh} / {s_pdh + 500 if s_pdh else 'NA'}"
 
@@ -318,11 +312,89 @@ Else → No trade
 🧠 Rule:
 Confluence > Prediction
 """
+
+
 # ===========================
-# US REPORT (UNCHANGED)
+# US REPORT
 # ===========================
 def us():
-    return "US BLOCK SAME AS BEFORE"
+
+    dow = change(fetch("^DJI"))
+    nasdaq = change(fetch("^IXIC"))
+    spx = change(fetch("^GSPC"))
+
+    btc_df = fetch("BTC-USD")
+    btc_pct, btc_pts = change(btc_df)
+    pdh, pdl, pivot = levels(btc_df)
+
+    trend = "BULLISH" if btc_pct and btc_pct > 0 else "BEARISH"
+
+    return f"""🌙 US MARKET PREP (7:00 PM IST)
+
+🌍 Global Setup
+Asia: Mixed  
+Europe: Flat  
+
+--------------------------------------------------
+
+🇺🇸 US MARKET STRUCTURE
+
+DOW: {fmt(*dow)}  
+NASDAQ: {fmt(*nasdaq)}  
+S&P 500: {fmt(*spx)}  
+
+--------------------------------------------------
+
+🪙 BTC STRUCTURE
+
+Move: {fmt(btc_pct, btc_pts)}
+
+PDH: {pdh}  
+PDL: {pdl}  
+Pivot: {pivot}
+
+Trend: {trend}
+
+--------------------------------------------------
+
+🎯 BTC EXECUTION
+
+Buy above {pdh} (breakout)  
+Sell below {pdl} (breakdown)  
+
+SL:
+Breakout → below PDH  
+Breakdown → above PDL  
+
+--------------------------------------------------
+
+🛡️ RISK
+
+- Trade only breakout  
+- Avoid range  
+
+--------------------------------------------------
+
+🔗 MARKET ALIGNMENT
+
+India: Refer morning bias  
+US: Mixed  
+BTC: {trend}  
+
+--------------------------------------------------
+
+🎯 FINAL CALL
+
+🔥 ONLY TRADE:
+
+Trade breakout levels only  
+
+⚠️ Avoid:
+Mid-range  
+
+🧠 Rule:
+No breakout → No trade
+"""
 
 
 # ===========================
@@ -330,8 +402,12 @@ def us():
 # ===========================
 def main():
     print("BOT STARTED")
-    send(india())
-    send(us())
+
+    try:
+        send(india())
+        send(us())
+    except Exception as e:
+        print("Error:", e)
 
 
 if __name__ == "__main__":
