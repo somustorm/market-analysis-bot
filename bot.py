@@ -1,7 +1,6 @@
 import requests
 import os
 import yfinance as yf
-import pandas as pd
 from datetime import datetime, timezone, timedelta
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -9,11 +8,8 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# ---------------------------
-# USER CONFIG (EDIT THIS)
-# ---------------------------
-CAPITAL = 100000   # your capital
-RISK_PERCENT = 0.02  # 2% risk
+CAPITAL = 100000
+RISK_PERCENT = 0.02
 
 
 # ---------------------------
@@ -21,17 +17,19 @@ RISK_PERCENT = 0.02  # 2% risk
 # ---------------------------
 def send(msg):
     if not TOKEN or not CHAT_ID:
-        print("Missing Telegram config")
+        print("❌ Missing Telegram config")
         return
+
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+        res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+        print("Telegram:", res.status_code)
     except Exception as e:
         print("Telegram error:", e)
 
 
 # ---------------------------
-# FETCH
+# DATA HELPERS
 # ---------------------------
 def fetch(symbol):
     try:
@@ -39,167 +37,213 @@ def fetch(symbol):
         if df is None or df.empty or len(df) < 2:
             return None
         return df
-    except:
+    except Exception as e:
+        print(f"{symbol} fetch error:", e)
         return None
 
 
-# ---------------------------
-# CHANGE
-# ---------------------------
 def change(df):
     if df is None:
         return None, None
     try:
-        c = df["Close"]
-        last = float(c.iloc[-1])
-        prev = float(c.iloc[-2])
+        close = df["Close"]
+        last = float(close.iloc[-1])
+        prev = float(close.iloc[-2])
+
         pct = round((last / prev - 1) * 100, 2)
         pts = int(round(last - prev, 0))
+
         return pct, pts
     except:
         return None, None
 
 
-# ---------------------------
-# LEVELS
-# ---------------------------
 def levels(df):
     if df is None:
         return None, None, None
     try:
-        h = float(df["High"].iloc[-2])
-        l = float(df["Low"].iloc[-2])
-        c = float(df["Close"].iloc[-2])
-        pivot = (h + l + c) / 3
-        return int(h), int(l), int(round(pivot, 0))
+        high = float(df["High"].iloc[-2])
+        low = float(df["Low"].iloc[-2])
+        close = float(df["Close"].iloc[-2])
+
+        pivot = (high + low + close) / 3
+
+        return int(high), int(low), int(round(pivot, 0))
     except:
         return None, None, None
 
 
-# ---------------------------
-# MARKET CONDITION
-# ---------------------------
-def market_condition(pct):
-    if pct is None:
-        return "UNKNOWN"
-    if abs(pct) < 0.5:
-        return "RANGE"
-    elif abs(pct) > 1:
-        return "EXTENDED"
-    else:
-        return "NORMAL"
-
-
-# ---------------------------
-# SCORE MODEL
-# ---------------------------
-def score_model(n_pct):
-    if n_pct is None:
-        return 0, "UNKNOWN", "NO DATA"
-
-    if abs(n_pct) > 1:
-        bias = "BULLISH" if n_pct > 0 else "BEARISH"
-        return n_pct, bias, f"PRICE DOMINANT ({bias})"
-
-    return n_pct, "NEUTRAL", "LOW CONVICTION"
-
-
-# ---------------------------
-# EXECUTION (A/B/C)
-# ---------------------------
-def execution_plan(condition, bias, pdh, pdl, pivot):
-
-    if condition == "RANGE":
-        return "NO TRADE", None, None
-
-    if bias == "BEARISH":
-        entry = pivot
-        sl = pdh
-        return "Sell on pullback", entry, sl
-
-    if bias == "BULLISH":
-        entry = pivot
-        sl = pdl
-        return "Buy on dip", entry, sl
-
-    return "No plan", None, None
-
-
-# ---------------------------
-# POSITION SIZING
-# ---------------------------
-def position_size(entry, sl):
-    if entry is None or sl is None:
-        return None, None
-
-    risk_amount = CAPITAL * RISK_PERCENT
-    sl_distance = abs(entry - sl)
-
-    if sl_distance == 0:
-        return None, None
-
-    qty = int(risk_amount / sl_distance)
-
-    return qty, int(risk_amount)
-
-
-# ---------------------------
-# FORMAT
-# ---------------------------
 def fmt(pct, pts):
-    if pct is None:
+    if pct is None or pts is None:
         return "NA"
     sign = "+" if pts > 0 else ""
     return f"{sign}{pts} ({pct}%)"
 
 
 # ---------------------------
+# POSITION SIZE
+# ---------------------------
+def position(entry, sl):
+    if entry is None or sl is None:
+        return None, None
+
+    risk_amt = CAPITAL * RISK_PERCENT
+    dist = abs(entry - sl)
+
+    if dist == 0:
+        return None, None
+
+    qty = int(risk_amt / dist)
+
+    return qty, int(risk_amt)
+
+
+# ---------------------------
 # INDIA REPORT
 # ---------------------------
-def india():
+def india_report():
 
-    df_n = fetch("^NSEI")
-    n = change(df_n)
+    df = fetch("^NSEI")
+    n_pct, n_pts = change(df)
+    pdh, pdl, pivot = levels(df)
 
-    pdh, pdl, pivot = levels(df_n)
+    crude = change(fetch("CL=F"))
+    vix = change(fetch("^INDIAVIX"))
+    dxy = change(fetch("DX-Y.NYB"))
 
-    condition = market_condition(n[0])
-    score, bias, interp = score_model(n[0])
+    condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
+    bias = "BEARISH" if n_pct and n_pct < 0 else "BULLISH"
 
-    plan, entry, sl = execution_plan(condition, bias, pdh, pdl, pivot)
+    entry = pivot
+    sl = pdh if bias == "BEARISH" else pdl
+    qty, risk_amt = position(entry, sl)
 
-    qty, risk_amt = position_size(entry, sl)
+    msg = f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
 
-    return f"""🇮🇳 INDIA MARKET OUTLOOK
+🌍 Macro
+DXY: {dxy[0] if dxy[0] else "NA"}%
+VIX: {vix[0] if vix[0] else "NA"}%
+Crude: {fmt(*crude)}
 
-NIFTY: {fmt(*n)}
+👉 Interpretation: {"Risk-OFF" if vix[0] and vix[0] > 0 else "Neutral"}
 
-📍 Levels
+📉 Market Structure
+NIFTY: {fmt(n_pct, n_pts)}
 PDH: {pdh} | PDL: {pdl} | Pivot: {pivot}
 
 🧠 Condition: {condition}
-
 📊 Bias: {bias}
-📌 {interp}
 
-🎯 Plan:
-{plan}
+🎯 Execution
+A: {"Sell near PDH" if bias=="BEARISH" else "Buy near PDL"}
+B: {"Sell near Pivot" if bias=="BEARISH" else "Buy near Pivot"}
+C: Avoid chasing
 
-💰 Risk Management:
+🛑 SL: {sl if sl else "NA"}
+
+💰 Risk
 Capital: ₹{CAPITAL}
-Risk/Trade: ₹{risk_amt}
-Position Size: {qty if qty else "NA"}
+Risk: ₹{risk_amt if risk_amt else "NA"}
+Qty: {qty if qty else "NA"}
 
-SL: {sl}
+--------------------------------------------------
+🎯 ACTION
+
+Bias: {bias}
+Strategy: {"Sell on rise" if bias=="BEARISH" else "Buy dips"}
+Avoid: Chasing
 """
 
+    return msg
+
 
 # ---------------------------
-# MAIN
+# US REPORT
+# ---------------------------
+def us_report():
+
+    dow = change(fetch("^DJI"))
+    nasdaq = change(fetch("^IXIC"))
+    spx = change(fetch("^GSPC"))
+
+    btc_df = fetch("BTC-USD")
+    btc_pct, btc_pts = change(btc_df)
+    pdh, pdl, pivot = levels(btc_df)
+
+    msg = f"""🌙 US MARKET PREP (7:00 PM IST)
+
+🌍 Global Setup
+Asia: Mixed
+Europe: Flat
+
+📊 US Market
+DOW: {fmt(*dow)}
+NASDAQ: {fmt(*nasdaq)}
+SPX: {fmt(*spx)}
+
+🧠 Condition: Mixed
+
+--------------------------------------------------
+
+🪙 BTC STRUCTURE
+
+Move: {fmt(btc_pct, btc_pts)}
+
+PDH: {pdh}
+PDL: {pdl}
+Pivot: {pivot}
+
+--------------------------------------------------
+
+🎯 BTC PLAN
+
+Buy above {pdh if pdh else "NA"}
+Sell below {pdl if pdl else "NA"}
+
+Avoid mid-range trading
+
+--------------------------------------------------
+
+🎯 ACTION
+
+US: Mixed
+BTC: Range
+
+Strategy:
+Trade breakouts only
+Avoid noise
+"""
+
+    return msg
+
+
+# ---------------------------
+# MAIN ROUTER
 # ---------------------------
 def main():
-    send(india())
+
+    now = datetime.now(IST)
+    hour = now.hour
+    minute = now.minute
+
+    print(f"Time IST: {now}")
+
+    # 8:45 AM window (8:40–8:50)
+    if hour == 8 and 40 <= minute <= 50:
+        print("Running INDIA report")
+        send(india_report())
+
+    # 7:00 PM window (18:55–19:10)
+    elif hour == 19 and 0 <= minute <= 10:
+        print("Running US report")
+        send(us_report())
+
+    else:
+        print("Outside schedule window")
 
 
+# ---------------------------
+# ENTRY
+# ---------------------------
 if __name__ == "__main__":
     main()
