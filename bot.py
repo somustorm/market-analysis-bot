@@ -85,42 +85,38 @@ def nse_session():
 # FII
 # ---------------------------
 def fetch_fii():
-    for _ in range(2):
-        try:
-            session, headers = nse_session()
-            url = "https://www.nseindia.com/api/fiidiiTradeReact"
-            res = session.get(url, headers=headers, timeout=5)
-            data = res.json()
-            df = pd.DataFrame(data["data"])
-            latest = df.iloc[0]
-            return float(latest["fiiIdxFutBuyVal"]) - float(latest["fiiIdxFutSellVal"])
-        except:
-            time.sleep(1)
-    return None
+    try:
+        session, headers = nse_session()
+        url = "https://www.nseindia.com/api/fiidiiTradeReact"
+        res = session.get(url, headers=headers, timeout=5)
+        data = res.json()
+        df = pd.DataFrame(data["data"])
+        latest = df.iloc[0]
+        return float(latest["fiiIdxFutBuyVal"]) - float(latest["fiiIdxFutSellVal"])
+    except:
+        return None
 
 
 # ---------------------------
 # PCR
 # ---------------------------
 def fetch_pcr():
-    for _ in range(2):
-        try:
-            session, headers = nse_session()
-            url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-            res = session.get(url, headers=headers, timeout=5)
-            data = res.json()
+    try:
+        session, headers = nse_session()
+        url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+        res = session.get(url, headers=headers, timeout=5)
+        data = res.json()
 
-            ce, pe = [], []
-            for item in data["records"]["data"]:
-                if "CE" in item:
-                    ce.append(item["CE"]["openInterest"])
-                if "PE" in item:
-                    pe.append(item["PE"]["openInterest"])
+        ce, pe = [], []
+        for item in data["records"]["data"]:
+            if "CE" in item:
+                ce.append(item["CE"]["openInterest"])
+            if "PE" in item:
+                pe.append(item["PE"]["openInterest"])
 
-            return round(sum(pe) / sum(ce), 2)
-        except:
-            time.sleep(1)
-    return None
+        return round(sum(pe) / sum(ce), 2)
+    except:
+        return None
 
 
 # ---------------------------
@@ -143,41 +139,25 @@ def market_condition(pct):
 def score_model(n_pct, vix_pct, crude_pct, usd_pct, fii, pcr):
 
     score = 0
-    used = 0
 
-    # 🔥 PRICE DOMINANT
     if n_pct is not None:
         score += 0.6 if n_pct > 0 else -0.6
-        used += 1
 
-    # VIX
     if vix_pct is not None:
         score += -0.15 if vix_pct > 0 else 0.15
-        used += 1
 
-    # CRUDE
     if crude_pct is not None:
         score += -0.1 if crude_pct > 0 else 0.1
-        used += 1
 
-    # USD
     if usd_pct is not None:
         score += -0.05 if usd_pct > 0 else 0.05
-        used += 1
 
-    # FII
     if fii is not None:
         score += 0.05 if fii > 0 else -0.05
-        used += 1
 
-    # PCR
     if pcr is not None:
         score += 0.05 if pcr > 1 else -0.05
-        used += 1
 
-    # -------------------
-    # PRICE OVERRIDE
-    # -------------------
     if n_pct is not None and abs(n_pct) > 1:
         bias = "BULLISH" if n_pct > 0 else "BEARISH"
         interpretation = f"PRICE DOMINANT ({bias})"
@@ -190,17 +170,45 @@ def score_model(n_pct, vix_pct, crude_pct, usd_pct, fii, pcr):
             interpretation = "BEARISH (< -0.3)"
         else:
             bias = "NEUTRAL"
-            interpretation = "NEUTRAL (between)"
+            interpretation = "NEUTRAL"
 
-    # Confidence
-    if abs(score) > 0.6:
-        conf = "HIGH"
-    elif abs(score) > 0.3:
-        conf = "MEDIUM"
-    else:
-        conf = "LOW"
+    return round(score, 2), bias, interpretation
 
-    return round(score, 2), bias, conf, used, interpretation
+
+# ---------------------------
+# EXECUTION LOGIC
+# ---------------------------
+def execution_plan(condition, bias, pdh, pdl, pivot):
+
+    if None in [pdh, pdl, pivot]:
+        return "No plan (missing data)"
+
+    if condition == "RANGE":
+        return "NO TRADE → Sideways market"
+
+    if bias == "BEARISH":
+        if condition == "EXTENDED":
+            return f"""SELL ZONE: {pivot} – {pdh}
+SL: Above {pdh}
+INVALIDATION: Sustained above PDH
+NOTE: Wait for pullback, do NOT chase"""
+        else:
+            return f"""SELL BELOW: {pdl}
+SL: Above {pivot}
+INVALIDATION: Move above pivot"""
+
+    if bias == "BULLISH":
+        if condition == "EXTENDED":
+            return f"""BUY ZONE: {pdl} – {pivot}
+SL: Below {pdl}
+INVALIDATION: Break below PDL
+NOTE: Wait for dip, do NOT chase"""
+        else:
+            return f"""BUY ABOVE: {pdh}
+SL: Below {pivot}
+INVALIDATION: Move below pivot"""
+
+    return "No clear plan"
 
 
 # ---------------------------
@@ -230,11 +238,13 @@ def india():
     fii = fetch_fii()
     pcr = fetch_pcr()
 
-    score, sbias, conf, used, interp = score_model(
+    score, bias, interp = score_model(
         n[0], vix[0], crude[0], usd[0], fii, pcr
     )
 
     condition = market_condition(n[0])
+
+    plan = execution_plan(condition, bias, pdh, pdl, pivot)
 
     return f"""🇮🇳 INDIA MARKET OUTLOOK
 
@@ -245,14 +255,15 @@ PDH: {pdh} | PDL: {pdl} | Pivot: {pivot}
 
 🧠 Condition: {condition}
 
-📊 Score Model
+📊 Score
 Score: {score}
-Bias: {sbias}
-Confidence: {conf}
-Signals Used: {used}/6
+Bias: {bias}
 
 📌 Interpretation:
 {interp}
+
+🎯 EXECUTION PLAN:
+{plan}
 
 🌍 Macro:
 Crude: {fmt(*crude)}
