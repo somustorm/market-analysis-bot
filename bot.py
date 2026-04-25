@@ -9,7 +9,6 @@ import math
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-
 # =============================
 # TELEGRAM
 # =============================
@@ -25,9 +24,8 @@ def send(msg):
     except Exception as e:
         print("Telegram Error:", e)
 
-
 # =============================
-# FETCH DATA (SAFE)
+# FETCH DATA
 # =============================
 def fetch(symbol):
     try:
@@ -39,7 +37,6 @@ def fetch(symbol):
     except Exception as e:
         print(f"{symbol} fetch error:", e)
         return None
-
 
 # =============================
 # SAFE CHANGE CALCULATION
@@ -63,9 +60,8 @@ def get_change(df):
         print("Change calc error:", e)
         return None, None, None
 
-
 # =============================
-# FORMATTER (NO -0 BUG)
+# FORMATTERS
 # =============================
 def fmt(pct, pts):
     if pct is None or pts is None:
@@ -76,12 +72,10 @@ def fmt(pct, pts):
 
     return f"{sign}{pts:.0f} ({pct*100:.2f}%)"
 
-
 def fmt_pct(x):
     if x is None:
         return "NA"
     return f"{x*100:.2f}%"
-
 
 # =============================
 # CORE SCORING (ONLY 4 SIGNALS)
@@ -112,7 +106,6 @@ def core_scoring(vix, fii, pcr, price, pivot):
         print("Scoring error:", e)
         return 0
 
-
 # =============================
 # MAIN ENGINE
 # =============================
@@ -134,20 +127,36 @@ def generate_report():
     crude_pct, crude_pts, _ = get_change(crude)
     btc_pct, btc_pts, _ = get_change(btc)
 
+    # =============================
+    # VIX SANITY FILTER (CRITICAL)
+    # =============================
+    if vix_pct is not None and abs(vix_pct) > 0.20:
+        print("⚠️ VIX abnormal, ignoring")
+        vix_pct = None
+
     # ---- PLACEHOLDERS ----
-    fii = -1        # Replace later
+    fii = -1        # Replace later with real data
     pcr = 0.85      # Replace later
 
-    # ---- SIMPLE PIVOT ----
-    pivot = n_price  # temporary (safe)
+    # ---- PIVOT (TEMP SAFE) ----
+    pivot = n_price
 
     # ---- SCORE ----
     score = core_scoring(vix_pct, fii, pcr, n_price, pivot)
 
-    bias = "BULLISH" if score > 0 else "BEARISH"
-    confidence = "HIGH" if abs(score) > 0.6 else "MEDIUM"
+    # ---- CONFIDENCE ----
+    if abs(score) > 0.6:
+        confidence = "HIGH"
+    elif abs(score) > 0.3:
+        confidence = "MEDIUM"
+    else:
+        confidence = "LOW"
 
-    # ---- MESSAGE ----
+    bias = "BULLISH" if score > 0 else "BEARISH"
+
+    # =============================
+    # MESSAGE
+    # =============================
     msg = f"""
 📊 MARKET UPDATE
 
@@ -169,14 +178,14 @@ Confidence: {confidence}
 
 ----------------------
 
-⚠️ TEST MODE
-- FII, PCR, Pivot are placeholders
+⚠️ SIGNAL NOT FINAL
+- FII, PCR, Pivot = placeholders
 - Using Yahoo data
+- For observation only
 
 """
 
     return msg
-
 
 # =============================
 # RUN
