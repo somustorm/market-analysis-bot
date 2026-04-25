@@ -79,7 +79,7 @@ def fmt(pct, pts):
 
 
 # ===========================
-# INDIA REPORT
+# INDIA (DECISION GRADE)
 # ===========================
 def india():
 
@@ -87,21 +87,61 @@ def india():
     pct, pts = change(df)
     pdh, pdl, pivot = levels(df)
 
+    bias = "BEARISH" if pct and pct < 0 else "BULLISH"
+    condition = "EXTENDED" if pct and abs(pct) > 1 else "NORMAL"
+
     return f"""🇮🇳 INDIA MARKET OUTLOOK
 
-NIFTY: {fmt(pct, pts)}
+📉 NIFTY: {fmt(pct, pts)}
 
-PDH: {pdh}
-PDL: {pdl}
+PDH: {pdh}  
+PDL: {pdl}  
 Pivot: {pivot}
 
-Bias: {"BEARISH" if pct and pct < 0 else "BULLISH"}
-Strategy: {"Sell on rise" if pct and pct < 0 else "Buy dips"}
+🧠 Condition: {condition}  
+📊 Bias: {bias}
+
+--------------------------------------------------
+
+🎯 EXECUTION PLAN
+
+🔥 A-SETUP
+{"Sell near PDH (rejection)" if bias=="BEARISH" else "Buy near PDL (support)"}
+
+🟡 B-SETUP
+{"Sell near Pivot if weakness" if bias=="BEARISH" else "Buy near Pivot if strength"}
+
+❌ C-SETUP
+{"Avoid selling at lows" if bias=="BEARISH" else "Avoid buying at highs"}
+
+🛑 Stop Loss:
+{"Above PDH" if bias=="BEARISH" else "Below PDL"}
+
+📉 Invalidation:
+{"Break above PDH" if bias=="BEARISH" else "Break below PDL"}
+
+--------------------------------------------------
+
+🎯 FINAL CALL
+
+Market: {bias} + {condition}
+
+🔥 Best Trade:
+{"Sell near PDH" if bias=="BEARISH" else "Buy near PDL"}
+
+⚠️ Avoid:
+{"Chasing downside" if bias=="BEARISH" else "Chasing upside"}
+
+📊 Confidence:
+{"Medium (extended move)" if condition=="EXTENDED" else "Moderate"}
+
+🧠 Rule:
+Wait for level → Do NOT chase
 """
 
 
 # ===========================
-# US REPORT (FULL FLOW)
+# US + BTC (DECISION GRADE)
 # ===========================
 def us():
 
@@ -118,29 +158,20 @@ def us():
     return f"""🌙 US MARKET PREP (7:00 PM IST)
 
 🌍 Global Setup
-Asia: Mixed
-Europe: Flat
+Asia: Mixed  
+Europe: Flat  
 
 👉 Interpretation: Mixed global tone
-
-📰 Major News
-- Inflation concerns persist
-- Bond yields elevated
-- Tech strength
-- Oil easing
-
-📅 Events (IST)
-CPI / Jobless / Fed Speakers
 
 --------------------------------------------------
 
 🇺🇸 US MARKET STRUCTURE
 
-DOW: {fmt(*dow)}
-NASDAQ: {fmt(*nasdaq)}
-S&P 500: {fmt(*spx)}
+DOW: {fmt(*dow)}  
+NASDAQ: {fmt(*nasdaq)}  
+S&P 500: {fmt(*spx)}  
 
-🧠 Market Condition: MIXED
+🧠 Market Condition: MIXED  
 
 --------------------------------------------------
 
@@ -148,8 +179,8 @@ S&P 500: {fmt(*spx)}
 
 Move: {fmt(btc_pct, btc_pts)}
 
-PDH: {pdh}
-PDL: {pdl}
+PDH: {pdh}  
+PDL: {pdl}  
 Pivot: {pivot}
 
 Trend: {trend}
@@ -158,26 +189,47 @@ Trend: {trend}
 
 🎯 BTC EXECUTION PLAN
 
+🟢 A-SETUP
 Buy above {pdh}
+
+🔴 A-SETUP
 Sell below {pdl}
 
+🟡 B-SETUP
+Trade near Pivot ({pivot}) with confirmation
+
+❌ C-SETUP
 Avoid mid-range trading
+
+🛑 Stop Loss:
+Opposite side of breakout
+
+📉 Invalidation:
+Fake breakout
 
 --------------------------------------------------
 
-🎯 ACTION
+🎯 FINAL CALL
 
-US Bias: MIXED
+US Market: MIXED → No strong edge  
 BTC Bias: {trend}
 
-Strategy:
-Trade breakouts only
-Avoid noise
+🔥 Best Opportunity:
+BTC breakout trade  
+
+⚠️ Avoid:
+Mid-range trading  
+
+📊 Confidence:
+Medium (event-driven)
+
+🧠 Rule:
+React to levels → Do NOT predict
 """
 
 
 # ===========================
-# MAIN (FORCE EXECUTION)
+# MAIN (STABLE)
 # ===========================
 def main():
 
@@ -187,12 +239,11 @@ def main():
         now = datetime.now(IST)
         print("Time IST:", now)
 
-        print("Sending INDIA report...")
+        # Send both (stable mode)
         india_msg = india()
         print(india_msg)
         send(india_msg)
 
-        print("Sending US report...")
         us_msg = us()
         print(us_msg)
         send(us_msg)
