@@ -134,7 +134,7 @@ def market_condition(pct):
 
 
 # ---------------------------
-# SCORE MODEL (PRICE DOMINANT)
+# SCORE MODEL
 # ---------------------------
 def score_model(n_pct, vix_pct, crude_pct, usd_pct, fii, pcr):
 
@@ -160,23 +160,23 @@ def score_model(n_pct, vix_pct, crude_pct, usd_pct, fii, pcr):
 
     if n_pct is not None and abs(n_pct) > 1:
         bias = "BULLISH" if n_pct > 0 else "BEARISH"
-        interpretation = f"PRICE DOMINANT ({bias})"
+        interp = f"PRICE DOMINANT ({bias})"
     else:
         if score > 0.3:
             bias = "BULLISH"
-            interpretation = "BULLISH (> +0.3)"
+            interp = "BULLISH (> +0.3)"
         elif score < -0.3:
             bias = "BEARISH"
-            interpretation = "BEARISH (< -0.3)"
+            interp = "BEARISH (< -0.3)"
         else:
             bias = "NEUTRAL"
-            interpretation = "NEUTRAL"
+            interp = "NEUTRAL"
 
-    return round(score, 2), bias, interpretation
+    return round(score, 2), bias, interp
 
 
 # ---------------------------
-# EXECUTION LOGIC
+# EXECUTION PLAN (TIERED)
 # ---------------------------
 def execution_plan(condition, bias, pdh, pdl, pivot):
 
@@ -187,26 +187,61 @@ def execution_plan(condition, bias, pdh, pdl, pivot):
         return "NO TRADE → Sideways market"
 
     if bias == "BEARISH":
+
         if condition == "EXTENDED":
-            return f"""SELL ZONE: {pivot} – {pdh}
-SL: Above {pdh}
-INVALIDATION: Sustained above PDH
-NOTE: Wait for pullback, do NOT chase"""
+            return f"""PRIMARY SELL:
+Near Pivot ({pivot})
+
+SECONDARY SELL (High Probability):
+Near PDH ({pdh})
+
+STOP LOSS:
+Above {pdh}
+
+INVALIDATION:
+Sustained move above PDH
+
+NOTE:
+Higher the pullback → better the trade
+Avoid selling immediately after fall"""
+
         else:
-            return f"""SELL BELOW: {pdl}
-SL: Above {pivot}
-INVALIDATION: Move above pivot"""
+            return f"""SELL BELOW:
+{pdl}
+
+STOP LOSS:
+Above {pivot}
+
+INVALIDATION:
+Move above pivot"""
 
     if bias == "BULLISH":
+
         if condition == "EXTENDED":
-            return f"""BUY ZONE: {pdl} – {pivot}
-SL: Below {pdl}
-INVALIDATION: Break below PDL
-NOTE: Wait for dip, do NOT chase"""
+            return f"""PRIMARY BUY:
+Near Pivot ({pivot})
+
+SECONDARY BUY (High Probability):
+Near PDL ({pdl})
+
+STOP LOSS:
+Below {pdl}
+
+INVALIDATION:
+Break below PDL
+
+NOTE:
+Deeper dip → better entry"""
+
         else:
-            return f"""BUY ABOVE: {pdh}
-SL: Below {pivot}
-INVALIDATION: Move below pivot"""
+            return f"""BUY ABOVE:
+{pdh}
+
+STOP LOSS:
+Below {pivot}
+
+INVALIDATION:
+Move below pivot"""
 
     return "No clear plan"
 
