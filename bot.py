@@ -14,19 +14,17 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # ---------------------------
 def send(msg):
     if not TOKEN or not CHAT_ID:
-        print("❌ Missing Telegram config")
+        print("Missing Telegram config")
         return
-
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
-        print("Telegram response:", res.text)
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
     except Exception as e:
         print("Telegram error:", e)
 
 
 # ---------------------------
-# FETCH DATA
+# FETCH
 # ---------------------------
 def fetch(symbol):
     try:
@@ -34,49 +32,41 @@ def fetch(symbol):
         if df is None or df.empty or len(df) < 2:
             return None
         return df
-    except Exception as e:
-        print(f"Fetch error {symbol}:", e)
+    except:
         return None
 
 
 # ---------------------------
-# CHANGE (SAFE)
+# CHANGE
 # ---------------------------
 def change(df):
     if df is None:
         return None, None
-
     try:
-        close = df["Close"]
-        last = float(close.iloc[-1])
-        prev = float(close.iloc[-2])
+        c = df["Close"]
+        last = float(c.iloc[-1])
+        prev = float(c.iloc[-2])
 
         pct = round((last / prev - 1) * 100, 2)
         pts = int(round(last - prev, 0))
-
         return pct, pts
-    except Exception as e:
-        print("Change error:", e)
+    except:
         return None, None
 
 
 # ---------------------------
-# LEVELS (PDH / PDL / Pivot)
+# LEVELS
 # ---------------------------
 def levels(df):
     if df is None:
         return None, None, None
-
     try:
-        high = float(df["High"].iloc[-2])
-        low = float(df["Low"].iloc[-2])
-        close = float(df["Close"].iloc[-2])
-
-        pivot = (high + low + close) / 3
-
-        return int(high), int(low), int(round(pivot, 0))
-    except Exception as e:
-        print("Levels error:", e)
+        h = float(df["High"].iloc[-2])
+        l = float(df["Low"].iloc[-2])
+        c = float(df["Close"].iloc[-2])
+        pivot = (h + l + c) / 3
+        return int(h), int(l), int(round(pivot, 0))
+    except:
         return None, None, None
 
 
@@ -86,28 +76,25 @@ def levels(df):
 def market_condition(pct):
     if pct is None:
         return "UNKNOWN"
-
     if abs(pct) < 0.5:
         return "RANGE"
-    elif abs(pct) > 1.0:
+    elif abs(pct) > 1:
         return "EXTENDED"
     else:
         return "NORMAL"
 
 
 # ---------------------------
-# TRADE SETUP LOGIC
+# TRADE SETUP
 # ---------------------------
-def trade_setup(condition, pdh, pdl, pivot, current):
+def trade_setup(cond, pdh, pdl, pivot, current):
     if None in [pdh, pdl, pivot, current]:
         return "Data insufficient"
 
-    # RANGE MARKET
-    if condition == "RANGE":
-        return "No trade → Market sideways"
+    if cond == "RANGE":
+        return "No trade → Sideways market"
 
-    # EXTENDED MARKET
-    if condition == "EXTENDED":
+    if cond == "EXTENDED":
         if current < pdl:
             return f"Wait for pullback near Pivot ({pivot}) to SELL"
         elif current > pdh:
@@ -115,8 +102,7 @@ def trade_setup(condition, pdh, pdl, pivot, current):
         else:
             return "Wait → No clear setup"
 
-    # NORMAL MARKET
-    if condition == "NORMAL":
+    if cond == "NORMAL":
         if current > pdh:
             return "Buy breakout above PDH"
         elif current < pdl:
@@ -125,6 +111,48 @@ def trade_setup(condition, pdh, pdl, pivot, current):
             return "Inside range → No trade"
 
     return "No setup"
+
+
+# ---------------------------
+# SCORE MODEL
+# ---------------------------
+def score_model(n_pct, vix_pct, crude_pct, usd_pct):
+
+    score = 0
+
+    # NIFTY trend
+    if n_pct is not None:
+        score += 0.4 if n_pct > 0 else -0.4
+
+    # VIX (inverse)
+    if vix_pct is not None:
+        score += -0.2 if vix_pct > 0 else 0.2
+
+    # Crude
+    if crude_pct is not None:
+        score += -0.2 if crude_pct > 0 else 0.2
+
+    # USD
+    if usd_pct is not None:
+        score += -0.2 if usd_pct > 0 else 0.2
+
+    # Bias
+    if score > 0.3:
+        bias = "BULLISH"
+    elif score < -0.3:
+        bias = "BEARISH"
+    else:
+        bias = "NEUTRAL"
+
+    # Confidence
+    if abs(score) > 0.6:
+        conf = "HIGH"
+    elif abs(score) > 0.3:
+        conf = "MEDIUM"
+    else:
+        conf = "LOW"
+
+    return round(score, 2), bias, conf
 
 
 # ---------------------------
@@ -152,115 +180,57 @@ def india():
 
     pdh, pdl, pivot = levels(df_n)
 
-    current_price = None
-    if df_n is not None:
-        try:
-            current_price = int(float(df_n["Close"].iloc[-1]))
-        except:
-            current_price = None
+    current = int(float(df_n["Close"].iloc[-1])) if df_n is not None else None
 
     condition = market_condition(n[0])
-
-    setup = trade_setup(condition, pdh, pdl, pivot, current_price)
+    setup = trade_setup(condition, pdh, pdl, pivot, current)
 
     crude = change(fetch("CL=F"))
-    dxy = change(fetch("DX-Y.NYB"))
+    usd = change(fetch("DX-Y.NYB"))
+    vix = change(fetch("^INDIAVIX"))
 
-    if n[0] is None:
-        bias = "UNKNOWN"
-    elif float(n[0]) < 0:
-        bias = "BEARISH"
-    else:
-        bias = "BULLISH"
+    score, sbias, conf = score_model(n[0], vix[0], crude[0], usd[0])
 
-    msg = f"""🇮🇳 INDIA MARKET OUTLOOK
+    bias = "BEARISH" if n[0] and n[0] < 0 else "BULLISH"
+
+    return f"""🇮🇳 INDIA MARKET OUTLOOK
 
 NIFTY: {fmt(*n)}
 BANKNIFTY: {fmt(*bn)}
 SENSEX: {fmt(*s)}
 
-📍 Levels (NIFTY)
-PDH: {pdh}
-PDL: {pdl}
-Pivot: {pivot}
+📍 Levels
+PDH: {pdh} | PDL: {pdl} | Pivot: {pivot}
 
-🧠 Market Condition:
-{condition}
+🧠 Condition: {condition}
 
-🎯 Trade Setup:
+🎯 Setup:
 {setup}
 
-🌍 Macro:
-Crude: {fmt(*crude)}
-Dollar: {fmt(*dxy)}
-
-📉 Bias: {bias}
-"""
-
-    return msg
-
-
-# ---------------------------
-# US REPORT
-# ---------------------------
-def us():
-
-    dow = change(fetch("^DJI"))
-    nasdaq = change(fetch("^IXIC"))
-    spx = change(fetch("^GSPC"))
-
-    crude = change(fetch("CL=F"))
-    btc = change(fetch("BTC-USD"))
-
-    condition = market_condition(nasdaq[0])
-
-    if nasdaq[0] is None:
-        bias = "UNKNOWN"
-    elif float(nasdaq[0]) < 0:
-        bias = "BEARISH"
-    else:
-        bias = "BULLISH"
-
-    msg = f"""🌙 US MARKET PREP
-
-DOW: {fmt(*dow)}
-NASDAQ: {fmt(*nasdaq)}
-SPX: {fmt(*spx)}
-
-🧠 Market Condition:
-{condition}
+📊 Score Model
+Score: {score}
+Bias: {sbias}
+Confidence: {conf}
 
 🌍 Macro:
 Crude: {fmt(*crude)}
-BTC: {fmt(*btc)}
+USD: {fmt(*usd)}
+VIX: {fmt(*vix)}
 
-📉 Bias: {bias}
+📉 Price Bias: {bias}
 """
-
-    return msg
 
 
 # ---------------------------
-# MAIN ROUTER
+# MAIN
 # ---------------------------
 def main():
     now = datetime.now(IST)
-    hour = now.hour
-
-    print(f"Current IST time: {now}")
-
-    if hour == 8:
+    if now.hour == 8:
+        send(india())
+    else:
         send(india())
 
-    elif hour in [18, 19]:
-        send(us())
 
-    else:
-        send(india())  # manual fallback
-
-
-# ---------------------------
-# ENTRY
-# ---------------------------
 if __name__ == "__main__":
     main()
