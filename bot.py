@@ -81,33 +81,50 @@ def levels(df):
 
 
 # ---------------------------
-# BREAKOUT LOGIC
-# ---------------------------
-def breakout_signal(pdh, pdl, current):
-    if pdh is None or pdl is None or current is None:
-        return "NA"
-
-    if current > pdh:
-        return "Above PDH → Buy strength"
-    elif current < pdl:
-        return "Below PDL → Sell weakness"
-    else:
-        return "Inside range → No trade"
-
-
-# ---------------------------
-# MARKET CONDITION FILTER
+# MARKET CONDITION
 # ---------------------------
 def market_condition(pct):
     if pct is None:
         return "UNKNOWN"
 
     if abs(pct) < 0.5:
-        return "RANGE → Avoid trades"
+        return "RANGE"
     elif abs(pct) > 1.0:
-        return "EXTENDED → Avoid chasing"
+        return "EXTENDED"
     else:
-        return "NORMAL → Trades allowed"
+        return "NORMAL"
+
+
+# ---------------------------
+# TRADE SETUP LOGIC
+# ---------------------------
+def trade_setup(condition, pdh, pdl, pivot, current):
+    if None in [pdh, pdl, pivot, current]:
+        return "Data insufficient"
+
+    # RANGE MARKET
+    if condition == "RANGE":
+        return "No trade → Market sideways"
+
+    # EXTENDED MARKET
+    if condition == "EXTENDED":
+        if current < pdl:
+            return f"Wait for pullback near Pivot ({pivot}) to SELL"
+        elif current > pdh:
+            return f"Wait for pullback near Pivot ({pivot}) to BUY"
+        else:
+            return "Wait → No clear setup"
+
+    # NORMAL MARKET
+    if condition == "NORMAL":
+        if current > pdh:
+            return "Buy breakout above PDH"
+        elif current < pdl:
+            return "Sell breakdown below PDL"
+        else:
+            return "Inside range → No trade"
+
+    return "No setup"
 
 
 # ---------------------------
@@ -135,7 +152,6 @@ def india():
 
     pdh, pdl, pivot = levels(df_n)
 
-    # Current price
     current_price = None
     if df_n is not None:
         try:
@@ -143,15 +159,13 @@ def india():
         except:
             current_price = None
 
-    signal = breakout_signal(pdh, pdl, current_price)
-
-    # Market condition
     condition = market_condition(n[0])
+
+    setup = trade_setup(condition, pdh, pdl, pivot, current_price)
 
     crude = change(fetch("CL=F"))
     dxy = change(fetch("DX-Y.NYB"))
 
-    # SAFE BIAS
     if n[0] is None:
         bias = "UNKNOWN"
     elif float(n[0]) < 0:
@@ -170,18 +184,17 @@ PDH: {pdh}
 PDL: {pdl}
 Pivot: {pivot}
 
-⚡ Breakout:
-{signal}
-
 🧠 Market Condition:
 {condition}
+
+🎯 Trade Setup:
+{setup}
 
 🌍 Macro:
 Crude: {fmt(*crude)}
 Dollar: {fmt(*dxy)}
 
 📉 Bias: {bias}
-Plan: {"Sell on rise" if bias=="BEARISH" else "Buy dips"}
 """
 
     return msg
@@ -222,7 +235,6 @@ Crude: {fmt(*crude)}
 BTC: {fmt(*btc)}
 
 📉 Bias: {bias}
-Plan: {"Cautious / sell rallies" if bias=="BEARISH" else "Buy dips"}
 """
 
     return msg
@@ -238,16 +250,13 @@ def main():
     print(f"Current IST time: {now}")
 
     if hour == 8:
-        print("Running India report")
         send(india())
 
     elif hour in [18, 19]:
-        print("Running US report")
         send(us())
 
     else:
-        print("Manual run → sending India report")
-        send(india())
+        send(india())  # manual fallback
 
 
 # ---------------------------
