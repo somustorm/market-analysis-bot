@@ -16,8 +16,6 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # TELEGRAM
 # ===========================
 def send(msg):
-    print("Sending message...")
-
     if not TOKEN or not CHAT_ID:
         print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
         return
@@ -78,11 +76,10 @@ def fmt(pct, pts):
 
 
 # ===========================
-# INDIA (FULL SYSTEM)
+# INDIA REPORT (FULL SYSTEM)
 # ===========================
 def india():
 
-    # INDEX DATA
     nifty = fetch("^NSEI")
     bank = fetch("^NSEBANK")
     sensex = fetch("^BSESN")
@@ -95,25 +92,17 @@ def india():
     b_pdh, b_pdl, b_pivot = levels(bank)
     s_pdh, s_pdl, s_pivot = levels(sensex)
 
-    # COMMODITIES
     gold = change(fetch("GC=F"))
     silver = change(fetch("SI=F"))
     crude = change(fetch("CL=F"))
 
-    # BIAS
     bias = "BEARISH" if n_pct and n_pct < 0 else "BULLISH"
     condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
     trend = "Weak" if bias == "BEARISH" else "Strong"
 
-    # SUPPORT / RESISTANCE
+    # Support / Resistance
     n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
     n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
-
-    b_support = f"{b_pdl} / {b_pdl - 400 if b_pdl else 'NA'}"
-    b_resist = f"{b_pdh} / {b_pdh + 400 if b_pdh else 'NA'}"
-
-    s_support = f"{s_pdl} / {s_pdl - 500 if s_pdl else 'NA'}"
-    s_resist = f"{s_pdh} / {s_pdh + 500 if s_pdh else 'NA'}"
 
     return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
 
@@ -123,10 +112,13 @@ def india():
 - China demand weak
 - Oil cooling
 
-📅 Events (IST)
-CPI → 10 Apr | 8:00 PM
-Jobless → 09 Apr | 6:00 PM
-Fed → Evening window
+📅 EVENTS (IST)
+US CPI → 10 Apr 2026 | 08:00 PM  
+Jobless Claims → 09 Apr 2026 | 06:00 PM  
+Fed Speakers → 09–11 Apr | Evening  
+India CPI → 12 Apr 2026 | 05:30 PM  
+
+👉 Event Risk: HIGH
 
 --------------------------------------------------
 
@@ -142,16 +134,10 @@ Trend: {trend}
 BANKNIFTY
 Move: {fmt(b_pct, b_pts)}
 PDH: {b_pdh} | PDL: {b_pdl} | Pivot: {b_pivot}
-Support: {b_support}
-Resistance: {b_resist}
-Trend: {trend}
 
 SENSEX
 Move: {fmt(s_pct, s_pts)}
 PDH: {s_pdh} | PDL: {s_pdl} | Pivot: {s_pivot}
-Support: {s_support}
-Resistance: {s_resist}
-Trend: {trend}
 
 --------------------------------------------------
 
@@ -172,18 +158,52 @@ Weak: Banking, Metals
 
 🎯 EXECUTION PLAN
 
-🔥 A-SETUP
-{"Sell near PDH with rejection" if bias=="BEARISH" else "Buy near PDL with confirmation"}
+🔥 A-SETUP — REJECTION
 
-🟡 B-SETUP
-{"Sell near Pivot if weakness" if bias=="BEARISH" else "Buy near Pivot if strength"}
+Sell near {n_pdh} ONLY IF:
+- Rejection (wick + close below)
 
-❌ C-SETUP
-Avoid mid-range trades
+Entry: Below rejection candle  
+SL: Above rejection candle high  
 
-🧠 Trigger Logic
-Rejection = Long wick + close back inside  
-Confirmation = Strong close beyond level  
+--------------------------------------------------
+
+🚀 B-SETUP — BREAKDOWN
+
+Sell below {n_pdl} ONLY IF:
+- Strong breakdown
+
+Entry: Breakdown / retest  
+SL: Above breakdown candle  
+
+--------------------------------------------------
+
+🟢 REVERSAL (LOW PROBABILITY)
+
+Buy above {n_pdh} ONLY IF:
+- Strong breakout + sustain
+
+--------------------------------------------------
+
+❌ NO TRADE ZONE
+
+{n_pdl + 50 if n_pdl else 'NA'} – {n_pdh - 50 if n_pdh else 'NA'}
+
+--------------------------------------------------
+
+🧠 TRIGGER LOGIC
+
+Rejection = Wick + failure  
+Breakout = Close + sustain  
+Breakdown = Close + continuation  
+
+--------------------------------------------------
+
+🛡️ RISK MANAGEMENT
+
+- Risk per trade: 1–2%  
+- Trade only if SL defined  
+- Avoid random entries  
 
 --------------------------------------------------
 
@@ -191,22 +211,19 @@ Confirmation = Strong close beyond level
 
 Market: {bias} + {condition}
 
-🔥 Priority Trade:
-{"Sell near PDH" if bias=="BEARISH" else "Buy near PDL"}
+🔥 Priority:
+Sell near resistance  
 
-⚠️ NO TRADE ZONE:
-{n_pdl + 50 if n_pdl else 'NA'} – {n_pdh - 50 if n_pdh else 'NA'}
-
-📊 Confidence:
-{"Medium (extended)" if condition=="EXTENDED" else "Moderate"}
+⚠️ Avoid:
+Mid-range trades  
 
 🧠 Rule:
-No level touch = No trade
+No level → No trade
 """
 
 
 # ===========================
-# US + BTC (UNCHANGED CORE)
+# US + BTC REPORT
 # ===========================
 def us():
 
@@ -234,8 +251,6 @@ DOW: {fmt(*dow)}
 NASDAQ: {fmt(*nasdaq)}  
 S&P 500: {fmt(*spx)}  
 
-🧠 Market Condition: MIXED  
-
 --------------------------------------------------
 
 🪙 BTC STRUCTURE
@@ -250,27 +265,32 @@ Trend: {trend}
 
 --------------------------------------------------
 
-🎯 BTC EXECUTION PLAN
+🎯 BTC EXECUTION
 
-Buy above {pdh}
-Sell below {pdl}
+Buy above {pdh} (breakout)  
+Sell below {pdl} (breakdown)  
 
-Avoid mid-range trading
+SL: Opposite side  
+
+--------------------------------------------------
+
+🛡️ RISK
+
+- Trade only breakout  
+- Avoid range  
 
 --------------------------------------------------
 
 🎯 FINAL CALL
 
-US: MIXED  
-BTC Bias: {trend}
-
+BTC Bias: {trend}  
 Best Trade: Breakout only  
-Avoid: Range  
+Avoid: Mid-range  
 """
 
 
 # ===========================
-# MAIN (STABLE)
+# MAIN
 # ===========================
 def main():
 
@@ -280,13 +300,8 @@ def main():
         now = datetime.now(IST)
         print("Time:", now)
 
-        india_msg = india()
-        print(india_msg)
-        send(india_msg)
-
-        us_msg = us()
-        print(us_msg)
-        send(us_msg)
+        send(india())
+        send(us())
 
     except Exception as e:
         print("ERROR:", e)
