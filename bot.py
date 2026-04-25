@@ -3,9 +3,6 @@ import os
 import yfinance as yf
 from datetime import datetime, timezone, timedelta
 
-# ===========================
-# CONFIG
-# ===========================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -17,13 +14,13 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # ===========================
 def send(msg):
     if not TOKEN or not CHAT_ID:
-        print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
+        print("Missing Telegram config")
         return
 
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print("Telegram:", res.text)
+        print(res.text)
     except Exception as e:
         print("Telegram error:", e)
 
@@ -76,7 +73,7 @@ def fmt(pct, pts):
 
 
 # ===========================
-# INDIA REPORT (FULL SYSTEM)
+# INDIA REPORT
 # ===========================
 def india():
 
@@ -100,9 +97,15 @@ def india():
     condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
     trend = "Weak" if bias == "BEARISH" else "Strong"
 
-    # Support / Resistance
+    # Support/Resistance
     n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
     n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
+
+    b_support = f"{b_pdl} / {b_pdl - 400 if b_pdl else 'NA'}"
+    b_resist = f"{b_pdh} / {b_pdh + 400 if b_pdh else 'NA'}"
+
+    s_support = f"{s_pdl} / {s_pdl - 500 if s_pdl else 'NA'}"
+    s_resist = f"{s_pdh} / {s_pdh + 500 if s_pdh else 'NA'}"
 
     return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
 
@@ -134,10 +137,16 @@ Trend: {trend}
 BANKNIFTY
 Move: {fmt(b_pct, b_pts)}
 PDH: {b_pdh} | PDL: {b_pdl} | Pivot: {b_pivot}
+Support: {b_support}
+Resistance: {b_resist}
+Trend: {trend}
 
 SENSEX
 Move: {fmt(s_pct, s_pts)}
 PDH: {s_pdh} | PDL: {s_pdl} | Pivot: {s_pivot}
+Support: {s_support}
+Resistance: {s_resist}
+Trend: {trend}
 
 --------------------------------------------------
 
@@ -164,7 +173,7 @@ Sell near {n_pdh} ONLY IF:
 - Rejection (wick + close below)
 
 Entry: Below rejection candle  
-SL: Above rejection candle high  
+SL: Above rejection candle high + 10–20 buffer  
 
 --------------------------------------------------
 
@@ -174,14 +183,16 @@ Sell below {n_pdl} ONLY IF:
 - Strong breakdown
 
 Entry: Breakdown / retest  
-SL: Above breakdown candle  
+SL: Above breakdown candle OR above PDL  
 
 --------------------------------------------------
 
 🟢 REVERSAL (LOW PROBABILITY)
 
 Buy above {n_pdh} ONLY IF:
-- Strong breakout + sustain
+- Strong breakout + sustain  
+
+SL: Below PDH  
 
 --------------------------------------------------
 
@@ -193,9 +204,9 @@ Buy above {n_pdh} ONLY IF:
 
 🧠 TRIGGER LOGIC
 
-Rejection = Wick + failure  
-Breakout = Close + sustain  
-Breakdown = Close + continuation  
+Rejection = Wick + close below  
+Breakout = Close above + sustain  
+Breakdown = Close below + continuation  
 
 --------------------------------------------------
 
@@ -207,23 +218,30 @@ Breakdown = Close + continuation
 
 --------------------------------------------------
 
+🔗 MARKET ALIGNMENT
+
+India: {bias}  
+US: Mixed  
+BTC: Refer below  
+
+--------------------------------------------------
+
 🎯 FINAL CALL
 
-Market: {bias} + {condition}
+🔥 ONLY TRADE:
 
-🔥 Priority:
-Sell near resistance  
+Sell near {n_pdh} IF rejection confirms  
+Else → No trade  
 
-⚠️ Avoid:
-Mid-range trades  
+⚠️ If price stays inside range → Skip day  
 
 🧠 Rule:
-No level → No trade
+No confirmation → No entry
 """
 
 
 # ===========================
-# US + BTC REPORT
+# US REPORT
 # ===========================
 def us():
 
@@ -270,7 +288,9 @@ Trend: {trend}
 Buy above {pdh} (breakout)  
 Sell below {pdl} (breakdown)  
 
-SL: Opposite side  
+SL:
+Breakout → below PDH  
+Breakdown → above PDL  
 
 --------------------------------------------------
 
@@ -281,11 +301,25 @@ SL: Opposite side
 
 --------------------------------------------------
 
+🔗 MARKET ALIGNMENT
+
+India: Refer morning bias  
+US: Mixed  
+BTC: {trend}  
+
+--------------------------------------------------
+
 🎯 FINAL CALL
 
-BTC Bias: {trend}  
-Best Trade: Breakout only  
-Avoid: Mid-range  
+🔥 ONLY TRADE:
+
+Trade breakout levels only  
+
+⚠️ Avoid:
+Mid-range  
+
+🧠 Rule:
+No breakout → No trade
 """
 
 
@@ -294,21 +328,14 @@ Avoid: Mid-range
 # ===========================
 def main():
 
-    print("=== BOT STARTED ===")
+    print("BOT STARTED")
 
     try:
-        now = datetime.now(IST)
-        print("Time:", now)
-
         send(india())
         send(us())
-
     except Exception as e:
-        print("ERROR:", e)
+        print("Error:", e)
 
 
-# ===========================
-# ENTRY
-# ===========================
 if __name__ == "__main__":
     main()
