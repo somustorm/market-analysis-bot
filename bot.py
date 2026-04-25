@@ -8,6 +8,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+
 # ---------------------------
 # TELEGRAM
 # ---------------------------
@@ -39,7 +40,7 @@ def fetch(symbol):
 
 
 # ---------------------------
-# CHANGE (SAFE SCALAR)
+# CHANGE (SAFE)
 # ---------------------------
 def change(df):
     if df is None:
@@ -47,7 +48,6 @@ def change(df):
 
     try:
         close = df["Close"]
-
         last = float(close.iloc[-1])
         prev = float(close.iloc[-2])
 
@@ -81,6 +81,21 @@ def levels(df):
 
 
 # ---------------------------
+# BREAKOUT LOGIC
+# ---------------------------
+def breakout_signal(pdh, pdl, current):
+    if pdh is None or pdl is None or current is None:
+        return "NA"
+
+    if current > pdh:
+        return "Above PDH → Buy strength"
+    elif current < pdl:
+        return "Below PDL → Sell weakness"
+    else:
+        return "Inside range → No trade"
+
+
+# ---------------------------
 # FORMAT
 # ---------------------------
 def fmt(pct, pts):
@@ -105,10 +120,20 @@ def india():
 
     pdh, pdl, pivot = levels(df_n)
 
+    # Current price
+    current_price = None
+    if df_n is not None:
+        try:
+            current_price = int(float(df_n["Close"].iloc[-1]))
+        except:
+            current_price = None
+
+    signal = breakout_signal(pdh, pdl, current_price)
+
     crude = change(fetch("CL=F"))
     dxy = change(fetch("DX-Y.NYB"))
 
-    # SAFE BIAS (NO PANDAS ERROR)
+    # SAFE BIAS
     if n[0] is None:
         bias = "UNKNOWN"
     elif float(n[0]) < 0:
@@ -126,6 +151,9 @@ SENSEX: {fmt(*s)}
 PDH: {pdh}
 PDL: {pdl}
 Pivot: {pivot}
+
+⚡ Breakout:
+{signal}
 
 🌍 Macro:
 Crude: {fmt(*crude)}
@@ -175,7 +203,7 @@ Plan: {"Cautious / sell rallies" if bias=="BEARISH" else "Buy dips"}
 
 
 # ---------------------------
-# MAIN ROUTER (SAFE)
+# MAIN ROUTER
 # ---------------------------
 def main():
     now = datetime.now(IST)
