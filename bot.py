@@ -176,7 +176,7 @@ def score_model(n_pct, vix_pct, crude_pct, usd_pct, fii, pcr):
 
 
 # ---------------------------
-# EXECUTION PLAN (TIERED)
+# EXECUTION (A/B/C SETUPS)
 # ---------------------------
 def execution_plan(condition, bias, pdh, pdl, pivot):
 
@@ -189,11 +189,14 @@ def execution_plan(condition, bias, pdh, pdl, pivot):
     if bias == "BEARISH":
 
         if condition == "EXTENDED":
-            return f"""PRIMARY SELL:
-Near Pivot ({pivot})
+            return f"""A-SETUP (High Probability):
+Sell near PDH ({pdh}) on rejection
 
-SECONDARY SELL (High Probability):
-Near PDH ({pdh})
+B-SETUP (Moderate):
+Sell near Pivot ({pivot}) if price stalls
+
+C-SETUP (Avoid):
+Selling below current price (market extended)
 
 STOP LOSS:
 Above {pdh}
@@ -202,15 +205,14 @@ INVALIDATION:
 Sustained move above PDH
 
 NOTE:
-Higher the pullback → better the trade
-Avoid selling immediately after fall"""
+Wait for price to come to you — do NOT chase"""
 
         else:
-            return f"""SELL BELOW:
-{pdl}
+            return f"""A-SETUP:
+Sell below PDL ({pdl})
 
 STOP LOSS:
-Above {pivot}
+Above Pivot ({pivot})
 
 INVALIDATION:
 Move above pivot"""
@@ -218,27 +220,27 @@ Move above pivot"""
     if bias == "BULLISH":
 
         if condition == "EXTENDED":
-            return f"""PRIMARY BUY:
-Near Pivot ({pivot})
+            return f"""A-SETUP (High Probability):
+Buy near PDL ({pdl}) on support
 
-SECONDARY BUY (High Probability):
-Near PDL ({pdl})
+B-SETUP (Moderate):
+Buy near Pivot ({pivot})
+
+C-SETUP (Avoid):
+Buying at highs
 
 STOP LOSS:
 Below {pdl}
 
 INVALIDATION:
-Break below PDL
-
-NOTE:
-Deeper dip → better entry"""
+Break below PDL"""
 
         else:
-            return f"""BUY ABOVE:
-{pdh}
+            return f"""A-SETUP:
+Buy above PDH ({pdh})
 
 STOP LOSS:
-Below {pivot}
+Below Pivot ({pivot})
 
 INVALIDATION:
 Move below pivot"""
