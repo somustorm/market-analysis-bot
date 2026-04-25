@@ -2,6 +2,12 @@ import requests
 import os
 import yfinance as yf
 import math
+from datetime import datetime
+
+# =============================
+# VERSION CONTROL
+# =============================
+VERSION = "v1.1-STABLE-TEST"
 
 # =============================
 # CONFIG
@@ -20,12 +26,12 @@ def send(msg):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print(res.text)
+        print("Telegram:", res.text)
     except Exception as e:
         print("Telegram Error:", e)
 
 # =============================
-# FETCH DATA
+# FETCH
 # =============================
 def fetch(symbol):
     try:
@@ -39,7 +45,7 @@ def fetch(symbol):
         return None
 
 # =============================
-# SAFE CHANGE CALCULATION
+# SAFE CHANGE
 # =============================
 def get_change(df):
     if df is None:
@@ -57,7 +63,7 @@ def get_change(df):
 
         return pct, pts, price
     except Exception as e:
-        print("Change calc error:", e)
+        print("Change error:", e)
         return None, None, None
 
 # =============================
@@ -78,25 +84,21 @@ def fmt_pct(x):
     return f"{x*100:.2f}%"
 
 # =============================
-# CORE SCORING (ONLY 4 SIGNALS)
+# CORE SCORING
 # =============================
 def core_scoring(vix, fii, pcr, price, pivot):
     score = 0
 
     try:
-        # VIX
         if vix is not None:
             score += -0.30 if vix > 0 else 0.30
 
-        # FII (placeholder)
         if fii is not None:
             score += -0.30 if fii < 0 else 0.30
 
-        # PCR
         if pcr is not None:
             score += -0.25 if pcr < 1 else 0.25
 
-        # Structure
         if price is not None and pivot is not None:
             score += -0.15 if price < pivot else 0.15
 
@@ -111,6 +113,8 @@ def core_scoring(vix, fii, pcr, price, pivot):
 # =============================
 def generate_report():
 
+    print(f"🚀 Running Market Bot | Version: {VERSION}")
+
     # ---- FETCH ----
     nifty = fetch("^NSEI")
     banknifty = fetch("^NSEBANK")
@@ -119,7 +123,7 @@ def generate_report():
     crude = fetch("CL=F")
     btc = fetch("BTC-USD")
 
-    # ---- CHANGES ----
+    # ---- DATA ----
     n_pct, n_pts, n_price = get_change(nifty)
     bn_pct, bn_pts, _ = get_change(banknifty)
     s_pct, s_pts, _ = get_change(sensex)
@@ -128,17 +132,16 @@ def generate_report():
     btc_pct, btc_pts, _ = get_change(btc)
 
     # =============================
-    # VIX SANITY FILTER (CRITICAL)
+    # VIX FILTER (FIXED)
     # =============================
-    if vix_pct is not None and abs(vix_pct) > 0.20:
-        print("⚠️ VIX abnormal, ignoring")
+    if vix_pct is not None and abs(vix_pct) > 0.04:
+        print("⚠️ Abnormal VIX detected → ignored")
         vix_pct = None
 
     # ---- PLACEHOLDERS ----
-    fii = -1        # Replace later with real data
-    pcr = 0.85      # Replace later
+    fii = -1
+    pcr = 0.85
 
-    # ---- PIVOT (TEMP SAFE) ----
     pivot = n_price
 
     # ---- SCORE ----
@@ -178,10 +181,14 @@ Confidence: {confidence}
 
 ----------------------
 
+⚠️ SYSTEM STATUS
+
+Version: {VERSION}
+Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
 ⚠️ SIGNAL NOT FINAL
 - FII, PCR, Pivot = placeholders
-- Using Yahoo data
-- For observation only
+- Yahoo data (not trading-grade)
 
 """
 
