@@ -3,6 +3,9 @@ import os
 import yfinance as yf
 from datetime import datetime, timezone, timedelta
 
+# ===========================
+# CONFIG
+# ===========================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
@@ -12,25 +15,25 @@ CAPITAL = 100000
 RISK_PERCENT = 0.02
 
 
-# ---------------------------
+# ===========================
 # TELEGRAM
-# ---------------------------
+# ===========================
 def send(msg):
     if not TOKEN or not CHAT_ID:
-        print("❌ Missing Telegram config")
+        print("❌ Missing TELEGRAM_TOKEN or CHAT_ID")
         return
 
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print("Telegram:", res.status_code)
+        print("Telegram response:", res.text)
     except Exception as e:
         print("Telegram error:", e)
 
 
-# ---------------------------
+# ===========================
 # DATA HELPERS
-# ---------------------------
+# ===========================
 def fetch(symbol):
     try:
         df = yf.download(symbol, period="2d", interval="1d", progress=False)
@@ -49,10 +52,8 @@ def change(df):
         close = df["Close"]
         last = float(close.iloc[-1])
         prev = float(close.iloc[-2])
-
         pct = round((last / prev - 1) * 100, 2)
         pts = int(round(last - prev, 0))
-
         return pct, pts
     except:
         return None, None
@@ -65,9 +66,7 @@ def levels(df):
         high = float(df["High"].iloc[-2])
         low = float(df["Low"].iloc[-2])
         close = float(df["Close"].iloc[-2])
-
         pivot = (high + low + close) / 3
-
         return int(high), int(low), int(round(pivot, 0))
     except:
         return None, None, None
@@ -80,9 +79,9 @@ def fmt(pct, pts):
     return f"{sign}{pts} ({pct}%)"
 
 
-# ---------------------------
-# POSITION SIZE
-# ---------------------------
+# ===========================
+# POSITION SIZING
+# ===========================
 def position(entry, sl):
     if entry is None or sl is None:
         return None, None
@@ -94,13 +93,12 @@ def position(entry, sl):
         return None, None
 
     qty = int(risk_amt / dist)
-
     return qty, int(risk_amt)
 
 
-# ---------------------------
+# ===========================
 # INDIA REPORT
-# ---------------------------
+# ===========================
 def india_report():
 
     df = fetch("^NSEI")
@@ -121,8 +119,8 @@ def india_report():
     msg = f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
 
 🌍 Macro
-DXY: {dxy[0] if dxy[0] else "NA"}%
-VIX: {vix[0] if vix[0] else "NA"}%
+DXY: {dxy[0] if dxy[0] is not None else "NA"}%
+VIX: {vix[0] if vix[0] is not None else "NA"}%
 Crude: {fmt(*crude)}
 
 👉 Interpretation: {"Risk-OFF" if vix[0] and vix[0] > 0 else "Neutral"}
@@ -147,6 +145,7 @@ Risk: ₹{risk_amt if risk_amt else "NA"}
 Qty: {qty if qty else "NA"}
 
 --------------------------------------------------
+
 🎯 ACTION
 
 Bias: {bias}
@@ -157,9 +156,9 @@ Avoid: Chasing
     return msg
 
 
-# ---------------------------
-# US REPORT
-# ---------------------------
+# ===========================
+# US + BTC REPORT
+# ===========================
 def us_report():
 
     dow = change(fetch("^DJI"))
@@ -217,33 +216,38 @@ Avoid noise
     return msg
 
 
-# ---------------------------
+# ===========================
 # MAIN ROUTER
-# ---------------------------
+# ===========================
 def main():
 
     now = datetime.now(IST)
     hour = now.hour
-    minute = now.minute
 
     print(f"Time IST: {now}")
 
-    # 8:45 AM window (8:40–8:50)
-    if hour == 8 and 40 <= minute <= 50:
-        print("Running INDIA report")
-        send(india_report())
+    try:
+        if hour == 8:
+            print("Running INDIA report")
+            msg = india_report()
+            print(msg)
+            send(msg)
 
-    # 7:00 PM window (18:55–19:10)
-    elif hour == 19 and 0 <= minute <= 10:
-        print("Running US report")
-        send(us_report())
+        elif hour == 19:
+            print("Running US report")
+            msg = us_report()
+            print(msg)
+            send(msg)
 
-    else:
-        print("Outside schedule window")
+        else:
+            print("Outside scheduled hours")
+
+    except Exception as e:
+        print("Main error:", e)
 
 
-# ---------------------------
+# ===========================
 # ENTRY
-# ---------------------------
+# ===========================
 if __name__ == "__main__":
     main()
