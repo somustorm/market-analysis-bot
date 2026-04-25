@@ -3,8 +3,8 @@ name: Market Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 3 * * 1-5"    # 8:45 AM IST (India)
-    - cron: "30 13 * * 1-5"   # 7:00 PM IST (US)
+    - cron: "15 3 * * 1-5"    # 08:45 IST (India)
+    - cron: "30 13 * * 1-5"   # 19:00 IST (US prep)
 
 jobs:
   run-bot:
@@ -23,7 +23,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install deps
-        run: pip install yfinance requests pandas
+        run: pip install yfinance requests
 
       - name: Run bot
         env:
