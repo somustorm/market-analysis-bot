@@ -96,6 +96,21 @@ def breakout_signal(pdh, pdl, current):
 
 
 # ---------------------------
+# MARKET CONDITION FILTER
+# ---------------------------
+def market_condition(pct):
+    if pct is None:
+        return "UNKNOWN"
+
+    if abs(pct) < 0.5:
+        return "RANGE → Avoid trades"
+    elif abs(pct) > 1.0:
+        return "EXTENDED → Avoid chasing"
+    else:
+        return "NORMAL → Trades allowed"
+
+
+# ---------------------------
 # FORMAT
 # ---------------------------
 def fmt(pct, pts):
@@ -130,6 +145,9 @@ def india():
 
     signal = breakout_signal(pdh, pdl, current_price)
 
+    # Market condition
+    condition = market_condition(n[0])
+
     crude = change(fetch("CL=F"))
     dxy = change(fetch("DX-Y.NYB"))
 
@@ -155,6 +173,9 @@ Pivot: {pivot}
 ⚡ Breakout:
 {signal}
 
+🧠 Market Condition:
+{condition}
+
 🌍 Macro:
 Crude: {fmt(*crude)}
 Dollar: {fmt(*dxy)}
@@ -178,6 +199,8 @@ def us():
     crude = change(fetch("CL=F"))
     btc = change(fetch("BTC-USD"))
 
+    condition = market_condition(nasdaq[0])
+
     if nasdaq[0] is None:
         bias = "UNKNOWN"
     elif float(nasdaq[0]) < 0:
@@ -190,6 +213,9 @@ def us():
 DOW: {fmt(*dow)}
 NASDAQ: {fmt(*nasdaq)}
 SPX: {fmt(*spx)}
+
+🧠 Market Condition:
+{condition}
 
 🌍 Macro:
 Crude: {fmt(*crude)}
