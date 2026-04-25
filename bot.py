@@ -25,7 +25,7 @@ def send(msg):
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print("Telegram response:", res.text)
+        print("Telegram:", res.text)
     except Exception as e:
         print("Telegram error:", e)
 
@@ -39,8 +39,7 @@ def fetch(symbol):
         if df is None or df.empty or len(df) < 2:
             return None
         return df
-    except Exception as e:
-        print(f"{symbol} fetch error:", e)
+    except:
         return None
 
 
@@ -79,46 +78,112 @@ def fmt(pct, pts):
 
 
 # ===========================
-# INDIA (DECISION GRADE)
+# INDIA (FULL SYSTEM)
 # ===========================
 def india():
 
-    df = fetch("^NSEI")
-    pct, pts = change(df)
-    pdh, pdl, pivot = levels(df)
+    # INDEX DATA
+    nifty = fetch("^NSEI")
+    bank = fetch("^NSEBANK")
+    sensex = fetch("^BSESN")
 
-    bias = "BEARISH" if pct and pct < 0 else "BULLISH"
-    condition = "EXTENDED" if pct and abs(pct) > 1 else "NORMAL"
+    n_pct, n_pts = change(nifty)
+    b_pct, b_pts = change(bank)
+    s_pct, s_pts = change(sensex)
 
-    return f"""🇮🇳 INDIA MARKET OUTLOOK
+    n_pdh, n_pdl, n_pivot = levels(nifty)
+    b_pdh, b_pdl, b_pivot = levels(bank)
+    s_pdh, s_pdl, s_pivot = levels(sensex)
 
-📉 NIFTY: {fmt(pct, pts)}
+    # COMMODITIES
+    gold = change(fetch("GC=F"))
+    silver = change(fetch("SI=F"))
+    crude = change(fetch("CL=F"))
 
-PDH: {pdh}  
-PDL: {pdl}  
-Pivot: {pivot}
+    # BIAS
+    bias = "BEARISH" if n_pct and n_pct < 0 else "BULLISH"
+    condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
+    trend = "Weak" if bias == "BEARISH" else "Strong"
 
-🧠 Condition: {condition}  
-📊 Bias: {bias}
+    # SUPPORT / RESISTANCE
+    n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
+    n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
+
+    b_support = f"{b_pdl} / {b_pdl - 400 if b_pdl else 'NA'}"
+    b_resist = f"{b_pdh} / {b_pdh + 400 if b_pdh else 'NA'}"
+
+    s_support = f"{s_pdl} / {s_pdl - 500 if s_pdl else 'NA'}"
+    s_resist = f"{s_pdh} / {s_pdh + 500 if s_pdh else 'NA'}"
+
+    return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
+
+🌍 Global News
+- Fed delaying rate cuts
+- Bond yields rising
+- China demand weak
+- Oil cooling
+
+📅 Events (IST)
+CPI → 10 Apr | 8:00 PM
+Jobless → 09 Apr | 6:00 PM
+Fed → Evening window
+
+--------------------------------------------------
+
+📉 MARKET STRUCTURE
+
+NIFTY
+Move: {fmt(n_pct, n_pts)}
+PDH: {n_pdh} | PDL: {n_pdl} | Pivot: {n_pivot}
+Support: {n_support}
+Resistance: {n_resist}
+Trend: {trend}
+
+BANKNIFTY
+Move: {fmt(b_pct, b_pts)}
+PDH: {b_pdh} | PDL: {b_pdl} | Pivot: {b_pivot}
+Support: {b_support}
+Resistance: {b_resist}
+Trend: {trend}
+
+SENSEX
+Move: {fmt(s_pct, s_pts)}
+PDH: {s_pdh} | PDL: {s_pdl} | Pivot: {s_pivot}
+Support: {s_support}
+Resistance: {s_resist}
+Trend: {trend}
+
+--------------------------------------------------
+
+🪙 COMMODITIES
+
+Gold: {fmt(*gold)}
+Silver: {fmt(*silver)}
+Crude: {fmt(*crude)}
+
+--------------------------------------------------
+
+📊 SECTOR STRENGTH
+
+Strong: IT, Pharma  
+Weak: Banking, Metals  
 
 --------------------------------------------------
 
 🎯 EXECUTION PLAN
 
 🔥 A-SETUP
-{"Sell near PDH (rejection)" if bias=="BEARISH" else "Buy near PDL (support)"}
+{"Sell near PDH with rejection" if bias=="BEARISH" else "Buy near PDL with confirmation"}
 
 🟡 B-SETUP
 {"Sell near Pivot if weakness" if bias=="BEARISH" else "Buy near Pivot if strength"}
 
 ❌ C-SETUP
-{"Avoid selling at lows" if bias=="BEARISH" else "Avoid buying at highs"}
+Avoid mid-range trades
 
-🛑 Stop Loss:
-{"Above PDH" if bias=="BEARISH" else "Below PDL"}
-
-📉 Invalidation:
-{"Break above PDH" if bias=="BEARISH" else "Break below PDL"}
+🧠 Trigger Logic
+Rejection = Long wick + close back inside  
+Confirmation = Strong close beyond level  
 
 --------------------------------------------------
 
@@ -126,22 +191,22 @@ Pivot: {pivot}
 
 Market: {bias} + {condition}
 
-🔥 Best Trade:
+🔥 Priority Trade:
 {"Sell near PDH" if bias=="BEARISH" else "Buy near PDL"}
 
-⚠️ Avoid:
-{"Chasing downside" if bias=="BEARISH" else "Chasing upside"}
+⚠️ NO TRADE ZONE:
+{n_pdl + 50 if n_pdl else 'NA'} – {n_pdh - 50 if n_pdh else 'NA'}
 
 📊 Confidence:
-{"Medium (extended move)" if condition=="EXTENDED" else "Moderate"}
+{"Medium (extended)" if condition=="EXTENDED" else "Moderate"}
 
 🧠 Rule:
-Wait for level → Do NOT chase
+No level touch = No trade
 """
 
 
 # ===========================
-# US + BTC (DECISION GRADE)
+# US + BTC (UNCHANGED CORE)
 # ===========================
 def us():
 
@@ -160,8 +225,6 @@ def us():
 🌍 Global Setup
 Asia: Mixed  
 Europe: Flat  
-
-👉 Interpretation: Mixed global tone
 
 --------------------------------------------------
 
@@ -189,42 +252,20 @@ Trend: {trend}
 
 🎯 BTC EXECUTION PLAN
 
-🟢 A-SETUP
 Buy above {pdh}
-
-🔴 A-SETUP
 Sell below {pdl}
 
-🟡 B-SETUP
-Trade near Pivot ({pivot}) with confirmation
-
-❌ C-SETUP
 Avoid mid-range trading
-
-🛑 Stop Loss:
-Opposite side of breakout
-
-📉 Invalidation:
-Fake breakout
 
 --------------------------------------------------
 
 🎯 FINAL CALL
 
-US Market: MIXED → No strong edge  
+US: MIXED  
 BTC Bias: {trend}
 
-🔥 Best Opportunity:
-BTC breakout trade  
-
-⚠️ Avoid:
-Mid-range trading  
-
-📊 Confidence:
-Medium (event-driven)
-
-🧠 Rule:
-React to levels → Do NOT predict
+Best Trade: Breakout only  
+Avoid: Range  
 """
 
 
@@ -237,9 +278,8 @@ def main():
 
     try:
         now = datetime.now(IST)
-        print("Time IST:", now)
+        print("Time:", now)
 
-        # Send both (stable mode)
         india_msg = india()
         print(india_msg)
         send(india_msg)
