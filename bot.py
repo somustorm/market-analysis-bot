@@ -2,7 +2,6 @@ import requests
 import os
 import yfinance as yf
 from datetime import datetime, timezone, timedelta
-import feedparser
 
 # ===========================
 # CONFIG
@@ -84,56 +83,6 @@ def fmt_clean(pct):
 
 
 # ===========================
-# ✅ LIVE NEWS (NEW)
-# ===========================
-def get_news():
-    feeds = [
-        "http://feeds.reuters.com/reuters/businessNews",
-        "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-        "https://feeds.bloomberg.com/markets/news.rss"
-    ]
-
-    news = []
-
-    for feed in feeds:
-        try:
-            parsed = feedparser.parse(feed)
-            for entry in parsed.entries[:2]:
-                news.append(entry.title)
-        except:
-            continue
-
-    return news[:4] if news else ["No major news available"]
-
-
-# ===========================
-# ✅ LIVE EVENTS (NEW)
-# ===========================
-def get_events():
-    today = datetime.utcnow().date()
-    events = []
-
-    try:
-        url = "https://api.tradingeconomics.com/calendar?c=guest:guest&f=json"
-        res = requests.get(url, timeout=5).json()
-
-        for e in res:
-            try:
-                event_date = datetime.strptime(e['Date'][:10], "%Y-%m-%d").date()
-                if event_date >= today:
-                    events.append(
-                        f"{e['Event']} ({e['Country']}) → {event_date}"
-                    )
-            except:
-                continue
-
-    except:
-        return ["⚠️ Event data unavailable"]
-
-    return events[:4] if events else ["✅ No major events today"]
-
-
-# ===========================
 # INDIA REPORT
 # ===========================
 def india():
@@ -192,11 +141,13 @@ def india():
         score_bias = "NEUTRAL"
         confidence = "LOW"
 
+    # ALIGNMENT STRENGTH (NEW)
     if bias == score_bias:
         alignment = "STRONG"
     else:
         alignment = "MODERATE"
 
+    # SUPPORT / RES
     n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
     n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
     b_support = f"{b_pdl} / {b_pdl - 400 if b_pdl else 'NA'}"
@@ -204,19 +155,19 @@ def india():
     s_support = f"{s_pdl} / {s_pdl - 500 if s_pdl else 'NA'}"
     s_resist = f"{s_pdh} / {s_pdh + 500 if s_pdh else 'NA'}"
 
-    news = get_news()
-    events = get_events()
-
     return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
 
 🌍 Global News
-- {news[0]}
-- {news[1]}
-- {news[2] if len(news)>2 else ""}
-- {news[3] if len(news)>3 else ""}
+- Fed delaying rate cuts
+- Bond yields rising
+- China demand weak
+- Oil cooling
 
 📅 EVENTS (IST)
-{chr(10).join(events)}
+US CPI → 10 Apr 2026 | 08:00 PM  
+Jobless Claims → 09 Apr 2026 | 06:00 PM  
+Fed Speakers → 09–11 Apr | Evening  
+India CPI → 12 Apr 2026 | 05:30 PM  
 
 👉 Event Risk: HIGH
 
@@ -283,5 +234,193 @@ Confidence: {confidence}
 --------------------------------------------------
 
 🎯 EXECUTION PLAN
-... (UNCHANGED BELOW — KEEP YOUR FULL ORIGINAL BLOCK)
+
+🔥 A-SETUP — REJECTION
+
+Sell near {n_pdh} ONLY IF:
+- Rejection (wick + close below)
+
+Entry: Below rejection candle  
+SL: Above rejection candle high + 10–20 buffer  
+
+--------------------------------------------------
+
+🚀 B-SETUP — BREAKDOWN
+
+Sell below {n_pdl} ONLY IF:
+- Strong breakdown
+
+Entry: Breakdown / retest  
+SL: Above breakdown candle OR above PDL  
+
+--------------------------------------------------
+
+🟢 REVERSAL (LOW PROBABILITY)
+
+Buy above {n_pdh} ONLY IF:
+- Strong breakout + sustain  
+
+SL: Below PDH  
+
+--------------------------------------------------
+
+❌ NO TRADE ZONE
+
+{n_pdl + 50 if n_pdl else 'NA'} – {n_pdh - 50 if n_pdh else 'NA'}
+
+--------------------------------------------------
+
+🧠 TRIGGER LOGIC
+
+Rejection = Wick + close below  
+Breakout = Close above + sustain  
+Breakdown = Close below + continuation  
+
+--------------------------------------------------
+
+🛡️ RISK MANAGEMENT
+
+- Risk per trade: 1–2%  
+- Trade only if SL defined  
+- Avoid random entries  
+
+--------------------------------------------------
+
+⚠️ EVENT EXECUTION RULE
+
+- Avoid new trades 30–60 min before major events  
+- Expect volatility spikes  
+- Prefer A-setup only on event days  
+
+--------------------------------------------------
+
+🔗 MARKET ALIGNMENT
+
+India: {bias}  
+Score: {score_bias}  
+US: Mixed  
+BTC: Refer below  
+
+👉 Alignment Strength: {alignment}
+
+--------------------------------------------------
+
+🎯 FINAL CALL
+
+🔥 ONLY TRADE:
+
+Sell near {n_pdh} IF rejection confirms  
+AND score supports downside  
+
+⚠️ Event Day Adjustment:
+Prefer A-setup only  
+
+Else → No trade  
+
+⚠️ If price stays inside range → Skip day  
+
+🧠 Rule:
+Confluence > Prediction
 """
+
+
+# ===========================
+# US REPORT
+# ===========================
+def us():
+
+    dow = change(fetch("^DJI"))
+    nasdaq = change(fetch("^IXIC"))
+    spx = change(fetch("^GSPC"))
+
+    btc_df = fetch("BTC-USD")
+    btc_pct, btc_pts = change(btc_df)
+    pdh, pdl, pivot = levels(btc_df)
+
+    trend = "BULLISH" if btc_pct and btc_pct > 0 else "BEARISH"
+
+    return f"""🌙 US MARKET PREP (7:00 PM IST)
+
+🌍 Global Setup
+Asia: Mixed  
+Europe: Flat  
+
+--------------------------------------------------
+
+🇺🇸 US MARKET STRUCTURE
+
+DOW: {fmt(*dow)}  
+NASDAQ: {fmt(*nasdaq)}  
+S&P 500: {fmt(*spx)}  
+
+--------------------------------------------------
+
+🪙 BTC STRUCTURE
+
+Move: {fmt(btc_pct, btc_pts)}
+
+PDH: {pdh}  
+PDL: {pdl}  
+Pivot: {pivot}
+
+Trend: {trend}
+
+--------------------------------------------------
+
+🎯 BTC EXECUTION
+
+Buy above {pdh} (breakout)  
+Sell below {pdl} (breakdown)  
+
+SL:
+Breakout → below PDH  
+Breakdown → above PDL  
+
+--------------------------------------------------
+
+❌ NO TRADE ZONE
+
+{pdl + 100 if pdl else 'NA'} – {pdh - 100 if pdh else 'NA'}
+
+--------------------------------------------------
+
+🛡️ RISK
+
+- Trade only breakout  
+- Avoid range  
+
+--------------------------------------------------
+
+🔗 MARKET ALIGNMENT
+
+India: Refer morning bias  
+US: Mixed  
+BTC: {trend}  
+
+--------------------------------------------------
+
+🎯 FINAL CALL
+
+🔥 ONLY TRADE:
+
+Trade breakout levels only  
+
+⚠️ Avoid:
+Mid-range  
+
+🧠 Rule:
+No breakout → No trade
+"""
+
+
+# ===========================
+# MAIN
+# ===========================
+def main():
+    print("BOT STARTED")
+    send(india())
+    send(us())
+
+
+if __name__ == "__main__":
+    main()
