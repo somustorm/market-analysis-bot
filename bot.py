@@ -1,125 +1,94 @@
-import yfinance as yf
 import requests
-import time
-from datetime import datetime
-import pytz
-import feedparser
 import os
+import yfinance as yf
+import time
+import feedparser
+from datetime import datetime, timezone, timedelta
 
-# =========================
+# ===========================
 # CONFIG
-# =========================
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+# ===========================
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-IST = pytz.timezone("Asia/Kolkata")
 
-# =========================
-# TELEGRAM SEND (WITH RETRY)
-# =========================
-def send_telegram(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+IST = timezone(timedelta(hours=5, minutes=30))
 
-    for i in range(3):
+# ===========================
+# TELEGRAM
+# ===========================
+def send(msg):
+    if not TOKEN or not CHAT_ID:
+        print("❌ Missing Telegram config")
+        return
+
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+        print("Telegram:", res.text)
+    except Exception as e:
+        print("Telegram error:", e)
+
+
+# ===========================
+# SAFE FETCH
+# ===========================
+def fetch(symbol):
+    for _ in range(3):
         try:
-            res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-            if res.status_code == 200:
-                return
-        except Exception as e:
-            print("Telegram attempt failed:", e)
-        time.sleep(2)
-
-    print("❌ Telegram failed after retries")
-
-
-# =========================
-# SAFE DATA FETCH
-# =========================
-def fetch_data(symbol, period="5d", interval="1d"):
-    for i in range(3):
-        try:
-            df = yf.download(symbol, period=period, interval=interval, progress=False)
-            if df is not None and not df.empty:
+            df = yf.download(symbol, period="2d", interval="1d", progress=False)
+            if df is not None and not df.empty and len(df) >= 2:
                 return df
-        except Exception as e:
-            print(f"Fetch error {symbol}:", e)
+        except:
+            pass
         time.sleep(2)
-
     return None
 
 
-# =========================
-# BTC DATA
-# =========================
-def get_btc_levels():
-    df = fetch_data("BTC-USD", interval="1h")
-
-    if df is None or len(df) < 3:
-        return None
-
+def change(df):
+    if df is None:
+        return None, None
     try:
-        pdh = round(df['High'].iloc[-2], 2)
-        pdl = round(df['Low'].iloc[-2], 2)
-        close = df['Close'].iloc[-2]
-        pivot = round((pdh + pdl + close) / 3, 2)
-
-        move = round(df['Close'].iloc[-1] - df['Close'].iloc[-2], 2)
-        trend = "BULLISH" if move > 0 else "BEARISH"
-
-        if pdh <= pdl:
-            return None
-
-        return pdh, pdl, pivot, move, trend
-
-    except Exception as e:
-        print("BTC calc error:", e)
-        return None
+        c = df["Close"]
+        last = float(c.iloc[-1])
+        prev = float(c.iloc[-2])
+        pct = round((last / prev - 1) * 100, 2)
+        pts = int(round(last - prev, 0))
+        return pct, pts
+    except:
+        return None, None
 
 
-# =========================
-# INDEX DATA
-# =========================
-def get_index(symbol):
-    df = fetch_data(symbol)
-
-    if df is None or len(df) < 3:
-        return None
-
+def levels(df):
+    if df is None:
+        return None, None, None
     try:
-        pdh = int(df['High'].iloc[-2])
-        pdl = int(df['Low'].iloc[-2])
-        close = df['Close'].iloc[-1]
-        prev_close = df['Close'].iloc[-2]
-
-        move = round(close - prev_close, 2)
-        pct = round((move / prev_close) * 100, 2)
-        pivot = int((pdh + pdl + prev_close) / 3)
-
-        if pdh <= pdl:
-            return None
-
-        # Better trend classification
-        if pct > 1:
-            trend = "Strong Bullish"
-        elif pct > 0.3:
-            trend = "Mild Bullish"
-        elif pct > -0.3:
-            trend = "Sideways"
-        elif pct > -1:
-            trend = "Mild Bearish"
-        else:
-            trend = "Strong Bearish"
-
-        return pdh, pdl, pivot, move, pct, trend
-
-    except Exception as e:
-        print("Index calc error:", e)
-        return None
+        h = float(df["High"].iloc[-2])
+        l = float(df["Low"].iloc[-2])
+        c = float(df["Close"].iloc[-2])
+        pivot = (h + l + c) / 3
+        return int(h), int(l), int(round(pivot, 0))
+    except:
+        return None, None, None
 
 
-# =========================
-# GLOBAL NEWS (RSS)
-# =========================
-def get_global_news():
+def fmt(pct, pts):
+    if pct is None or pts is None:
+        return "NA"
+    sign = "+" if pts > 0 else ""
+    return f"{sign}{pts} ({pct}%)"
+
+
+def fmt_clean(pct):
+    if pct is None:
+        return "NA"
+    sign = "+" if pct > 0 else ""
+    return f"{sign}{pct}%"
+
+
+# ===========================
+# LIVE NEWS (FIXED)
+# ===========================
+def get_news():
     feeds = [
         "http://feeds.reuters.com/reuters/businessNews",
         "https://www.cnbc.com/id/100003114/device/rss/rss.html",
@@ -139,9 +108,9 @@ def get_global_news():
     return news[:4] if news else ["No major news available"]
 
 
-# =========================
-# EVENTS (FILTERED)
-# =========================
+# ===========================
+# LIVE EVENTS (FIXED)
+# ===========================
 def get_events():
     today = datetime.utcnow().date()
     events = []
@@ -158,34 +127,36 @@ def get_events():
             except:
                 continue
 
-    except Exception as e:
-        print("Event fetch error:", e)
+    except:
         return ["⚠️ Event data unavailable"]
 
     return events[:4] if events else ["✅ No major events today"]
 
 
-# =========================
+# ===========================
 # INDIA REPORT
-# =========================
-def india_report():
-    now = datetime.now(IST)
-    print("Running INDIA report:", now)
+# ===========================
+def india():
 
-    nifty = get_index("^NSEI")
+    nifty = fetch("^NSEI")
+    bank = fetch("^NSEBANK")
+    sensex = fetch("^BSESN")
 
     if nifty is None:
-        send_telegram("❌ NIFTY DATA ERROR – NO TRADE")
-        return
+        return "❌ DATA ERROR – NO TRADE"
 
-    pdh, pdl, pivot, move, pct, trend = nifty
+    n_pct, n_pts = change(nifty)
+    b_pct, b_pts = change(bank)
+    s_pct, s_pts = change(sensex)
 
-    news = get_global_news()
+    n_pdh, n_pdl, n_pivot = levels(nifty)
+    b_pdh, b_pdl, b_pivot = levels(bank)
+    s_pdh, s_pdl, s_pivot = levels(sensex)
+
+    news = get_news()
     events = get_events()
 
-    mid = (pdh + pdl) // 2
-
-    msg = f"""🇮🇳 INDIA MARKET OUTLOOK ({now.strftime('%I:%M %p IST')})
+    return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
 
 🌍 Global News
 - {news[0]}
@@ -195,83 +166,71 @@ def india_report():
 📅 EVENTS
 {chr(10).join(events)}
 
-📉 NIFTY STRUCTURE
-Move: {move} ({pct}%)
-PDH: {pdh} | PDL: {pdl} | Pivot: {pivot}
-Trend: {trend}
+--------------------------------------------------
 
-🎯 EXECUTION
+📉 MARKET STRUCTURE
 
-Sell near {pdh} IF rejection  
-Buy above {pdh} IF breakout  
-Sell below {pdl} IF breakdown  
+NIFTY
+Move: {fmt(n_pct, n_pts)}
+PDH: {n_pdh} | PDL: {n_pdl} | Pivot: {n_pivot}
 
-❌ No Trade Zone: {mid - 50} – {mid + 50}
+--------------------------------------------------
+
+🎯 FINAL CALL
 
 🧠 Rule:
-No confirmation → No trade
+Confluence > Prediction
 """
 
-    send_telegram(msg)
 
+# ===========================
+# US REPORT
+# ===========================
+def us():
 
-# =========================
-# US + BTC REPORT
-# =========================
-def us_report():
-    now = datetime.now(IST)
-    print("Running US report:", now)
+    btc_df = fetch("BTC-USD")
+    btc_pct, btc_pts = change(btc_df)
+    pdh, pdl, pivot = levels(btc_df)
 
-    btc = get_btc_levels()
+    trend = "BULLISH" if btc_pct and btc_pct > 0 else "BEARISH"
 
-    if btc is None:
-        send_telegram("❌ BTC DATA ERROR – NO TRADE")
-        return
-
-    pdh, pdl, pivot, move, trend = btc
-
-    mid = (pdh + pdl) // 2
-
-    msg = f"""🌙 US MARKET PREP ({now.strftime('%I:%M %p IST')})
+    return f"""🌙 US MARKET PREP (6:45 PM IST)
 
 🪙 BTC STRUCTURE
-Move: {move}
-PDH: {pdh}
-PDL: {pdl}
+
+Move: {fmt(btc_pct, btc_pts)}
+
+PDH: {pdh}  
+PDL: {pdl}  
 Pivot: {pivot}
+
 Trend: {trend}
 
-🎯 EXECUTION
+--------------------------------------------------
 
-Buy above {pdh}  
-Sell below {pdl}
-
-❌ No Trade Zone: {mid - 100} – {mid + 100}
+🎯 FINAL CALL
 
 🧠 Rule:
-Breakout only → No breakout = No trade
+No breakout → No trade
 """
 
-    send_telegram(msg)
 
-
-# =========================
-# MAIN CONTROL (TIME SAFE)
-# =========================
-if __name__ == "__main__":
+# ===========================
+# MAIN
+# ===========================
+def main():
     now = datetime.now(IST)
-    print("=== BOT STARTED ===", now)
+    print("BOT RUN:", now)
 
-    try:
-        hour = now.hour
+    hour = now.hour
 
-        if 7 <= hour <= 11:
-            india_report()
-        elif 16 <= hour <= 21:
-            us_report()
-        else:
-            print("No valid execution window")
+    if 7 <= hour <= 11:
+        send(india())
+    elif 17 <= hour <= 21:
+        send(us())
+    else:
+        print("Outside execution window")
 
-    except Exception as e:
-        print("FATAL ERROR:", e)
-        send_telegram(f"❌ BOT ERROR: {e}")
+
+if __name__ == "__main__":
+    main()
