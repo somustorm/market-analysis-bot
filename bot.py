@@ -3,15 +3,12 @@ import os
 import yfinance as yf
 import feedparser
 from datetime import datetime, timezone, timedelta
+import time
 
-# ===========================
-# CONFIG
-# ===========================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 IST = timezone(timedelta(hours=5, minutes=30))
-
 
 # ===========================
 # TELEGRAM
@@ -34,16 +31,18 @@ def send(msg):
 
 
 # ===========================
-# DATA HELPERS
+# SAFE FETCH (yfinance)
 # ===========================
 def fetch(symbol):
-    try:
-        df = yf.download(symbol, period="2d", interval="1d", progress=False)
-        if df is None or df.empty or len(df) < 2:
-            return None
-        return df
-    except:
-        return None
+    for _ in range(3):
+        try:
+            df = yf.download(symbol, period="5d", interval="1d", progress=False)
+            if df is not None and not df.empty and len(df) >= 3:
+                return df
+        except Exception as e:
+            print("Fetch error:", symbol, e)
+        time.sleep(2)
+    return None
 
 
 def safe_float(val):
@@ -54,7 +53,7 @@ def safe_float(val):
 
 
 def change(df):
-    if df is None or "Close" not in df:
+    if df is None:
         return None, None
 
     try:
@@ -67,11 +66,9 @@ def change(df):
 
         pct = round((last / prev - 1) * 100, 2)
         pts = int(round(last - prev, 0))
-
         return pct, pts
 
-    except Exception as e:
-        print("Change error:", e)
+    except:
         return None, None
 
 
@@ -88,53 +85,58 @@ def levels(df):
             return None, None, None
 
         pivot = (h + l + c) / 3
-
         return int(h), int(l), int(round(pivot, 0))
 
-    except Exception as e:
-        print("Levels error:", e)
+    except:
         return None, None, None
 
 
 def fmt(pct, pts):
-    if pct is None or pts is None:
+    if pct is None:
         return "NA"
     sign = "+" if pts > 0 else ""
     return f"{sign}{pts} ({pct}%)"
 
 
-def fmt_clean(pct):
-    if pct is None:
-        return "NA"
-    sign = "+" if pct > 0 else ""
-    return f"{sign}{pct}%"
+# ===========================
+# BTC (CoinGecko)
+# ===========================
+def get_btc():
+    try:
+        url = "https://api.coingecko.com/api/v3/coins/bitcoin"
+        data = requests.get(url, timeout=5).json()
+
+        price = data["market_data"]["current_price"]["usd"]
+        change_24h = data["market_data"]["price_change_percentage_24h"]
+
+        return round(price, 2), round(change_24h, 2)
+    except:
+        return None, None
 
 
 # ===========================
-# LIVE NEWS
+# NEWS
 # ===========================
 def get_news():
     feeds = [
         "http://feeds.reuters.com/reuters/businessNews",
         "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-        "https://feeds.bloomberg.com/markets/news.rss"
     ]
 
     news = []
-
-    for feed in feeds:
+    for f in feeds:
         try:
-            parsed = feedparser.parse(feed)
-            for entry in parsed.entries[:2]:
-                news.append(entry.title)
+            parsed = feedparser.parse(f)
+            for e in parsed.entries[:2]:
+                news.append(e.title)
         except:
-            continue
+            pass
 
-    return news[:4] if news else ["No major news available"]
+    return news[:3] if news else ["No major news"]
 
 
 # ===========================
-# LIVE EVENTS
+# EVENTS
 # ===========================
 def get_events():
     today = datetime.utcnow().date()
@@ -145,17 +147,14 @@ def get_events():
         data = requests.get(url, timeout=5).json()
 
         for e in data:
-            try:
-                d = datetime.strptime(e['Date'][:10], "%Y-%m-%d").date()
-                if d >= today:
-                    events.append(f"{e['Event']} ({e['Country']}) → {d}")
-            except:
-                continue
+            d = datetime.strptime(e['Date'][:10], "%Y-%m-%d").date()
+            if d >= today:
+                events.append(f"{e['Event']} ({e['Country']}) → {d}")
 
     except:
         return ["⚠️ Event data unavailable"]
 
-    return events[:4] if events else ["✅ No major events today"]
+    return events[:3] if events else ["No major events"]
 
 
 # ===========================
@@ -163,54 +162,31 @@ def get_events():
 # ===========================
 def india():
     nifty = fetch("^NSEI")
-    bank = fetch("^NSEBANK")
-    sensex = fetch("^BSESN")
 
     if nifty is None:
-        return "❌ NIFTY DATA ERROR – NO TRADE"
+        return "❌ INDIA DATA FAILED — NO TRADE"
 
-    n_pct, n_pts = change(nifty)
-    b_pct, b_pts = change(bank)
-    s_pct, s_pts = change(sensex)
+    pct, pts = change(nifty)
+    pdh, pdl, pivot = levels(nifty)
 
-    n_pdh, n_pdl, n_pivot = levels(nifty)
-    b_pdh, b_pdl, b_pivot = levels(bank)
-    s_pdh, s_pdl, s_pivot = levels(sensex)
+    if pdh is None or pdl is None:
+        return "❌ INVALID INDIA DATA — NO TRADE"
 
     news = get_news()
     events = get_events()
 
-    return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
+    return f"""🇮🇳 INDIA MARKET OUTLOOK
 
-🌍 Global News
+🌍 News
 - {news[0]}
 - {news[1]}
 - {news[2] if len(news)>2 else ""}
-- {news[3] if len(news)>3 else ""}
 
-📅 EVENTS
+📅 Events
 {chr(10).join(events)}
 
---------------------------------------------------
-
-📉 MARKET STRUCTURE
-
-NIFTY
-Move: {fmt(n_pct, n_pts)}
-PDH: {n_pdh} | PDL: {n_pdl} | Pivot: {n_pivot}
-
-BANKNIFTY
-Move: {fmt(b_pct, b_pts)}
-PDH: {b_pdh} | PDL: {b_pdl} | Pivot: {b_pivot}
-
-SENSEX
-Move: {fmt(s_pct, s_pts)}
-PDH: {s_pdh} | PDL: {s_pdl} | Pivot: {s_pivot}
-
---------------------------------------------------
-
-🧠 Rule:
-Confluence > Prediction
+NIFTY Move: {fmt(pct, pts)}
+PDH: {pdh} | PDL: {pdl} | Pivot: {pivot}
 """
 
 
@@ -218,32 +194,17 @@ Confluence > Prediction
 # US REPORT
 # ===========================
 def us():
-    btc_df = fetch("BTC-USD")
+    btc_price, btc_pct = get_btc()
 
-    if btc_df is None:
-        return "❌ BTC DATA ERROR – NO TRADE"
+    if btc_price is None:
+        return "❌ BTC DATA FAILED — NO TRADE"
 
-    btc_pct, btc_pts = change(btc_df)
-    pdh, pdl, pivot = levels(btc_df)
+    return f"""🌙 US MARKET
 
-    trend = "BULLISH" if btc_pct and btc_pct > 0 else "BEARISH"
+BTC Price: {btc_price}
+24h Change: {btc_pct}%
 
-    return f"""🌙 US MARKET PREP (6:45 PM IST)
-
-🪙 BTC STRUCTURE
-
-Move: {fmt(btc_pct, btc_pts)}
-
-PDH: {pdh}  
-PDL: {pdl}  
-Pivot: {pivot}
-
-Trend: {trend}
-
---------------------------------------------------
-
-🧠 Rule:
-No breakout → No trade
+Rule: No breakout → No trade
 """
 
 
@@ -251,7 +212,7 @@ No breakout → No trade
 # MAIN
 # ===========================
 def main():
-    print("BOT STARTED")
+    print("BOT START")
 
     india_msg = india()
     us_msg = us()
