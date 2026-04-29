@@ -20,21 +20,34 @@ jobs:
       CHAT_ID: ${{ secrets.CHAT_ID }}
 
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: |
           pip install --upgrade pip
           pip install yfinance pandas requests pytz feedparser
 
-      - name: Run bot
+      - name: 🔍 Debug Environment Variables
         run: |
-          echo "Starting bot execution..."
+          echo "Checking environment variables..."
+          if [ -z "$TELEGRAM_TOKEN" ]; then echo "❌ TELEGRAM_TOKEN missing"; else echo "✅ TELEGRAM_TOKEN present"; fi
+          if [ -z "$CHAT_ID" ]; then echo "❌ CHAT_ID missing"; else echo "✅ CHAT_ID present"; fi
+
+      - name: ⏱ Print System Time
+        run: |
+          echo "UTC Time:"
+          date -u
+          echo "IST Time:"
+          TZ="Asia/Kolkata" date
+
+      - name: 🚀 Run Bot
+        run: |
+          echo "Starting bot..."
           python bot.py
-          echo "Bot execution completed."
+          echo "Bot finished."
