@@ -1,426 +1,277 @@
-import requests
-import os
 import yfinance as yf
-from datetime import datetime, timezone, timedelta
+import requests
+import time
+from datetime import datetime
+import pytz
+import feedparser
+import os
 
-# ===========================
+# =========================
 # CONFIG
-# ===========================
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+# =========================
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+IST = pytz.timezone("Asia/Kolkata")
 
-IST = timezone(timedelta(hours=5, minutes=30))
+# =========================
+# TELEGRAM SEND (WITH RETRY)
+# =========================
+def send_telegram(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+    for i in range(3):
+        try:
+            res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
+            if res.status_code == 200:
+                return
+        except Exception as e:
+            print("Telegram attempt failed:", e)
+        time.sleep(2)
+
+    print("❌ Telegram failed after retries")
 
 
-# ===========================
-# TELEGRAM
-# ===========================
-def send(msg):
-    if not TOKEN or not CHAT_ID:
-        print("Missing Telegram config")
-        return
+# =========================
+# SAFE DATA FETCH
+# =========================
+def fetch_data(symbol, period="5d", interval="1d"):
+    for i in range(3):
+        try:
+            df = yf.download(symbol, period=period, interval=interval, progress=False)
+            if df is not None and not df.empty:
+                return df
+        except Exception as e:
+            print(f"Fetch error {symbol}:", e)
+        time.sleep(2)
+
+    return None
+
+
+# =========================
+# BTC DATA
+# =========================
+def get_btc_levels():
+    df = fetch_data("BTC-USD", interval="1h")
+
+    if df is None or len(df) < 3:
+        return None
 
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        res = requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-        print(res.text)
-    except Exception as e:
-        print("Telegram error:", e)
+        pdh = round(df['High'].iloc[-2], 2)
+        pdl = round(df['Low'].iloc[-2], 2)
+        close = df['Close'].iloc[-2]
+        pivot = round((pdh + pdl + close) / 3, 2)
 
+        move = round(df['Close'].iloc[-1] - df['Close'].iloc[-2], 2)
+        trend = "BULLISH" if move > 0 else "BEARISH"
 
-# ===========================
-# DATA HELPERS
-# ===========================
-def fetch(symbol):
-    try:
-        df = yf.download(symbol, period="2d", interval="1d", progress=False)
-        if df is None or df.empty or len(df) < 2:
+        if pdh <= pdl:
             return None
-        return df
-    except:
+
+        return pdh, pdl, pivot, move, trend
+
+    except Exception as e:
+        print("BTC calc error:", e)
         return None
 
 
-def change(df):
-    if df is None:
-        return None, None
+# =========================
+# INDEX DATA
+# =========================
+def get_index(symbol):
+    df = fetch_data(symbol)
+
+    if df is None or len(df) < 3:
+        return None
+
     try:
-        c = df["Close"]
-        last = float(c.iloc[-1])
-        prev = float(c.iloc[-2])
-        pct = round((last / prev - 1) * 100, 2)
-        pts = int(round(last - prev, 0))
-        return pct, pts
-    except:
-        return None, None
+        pdh = int(df['High'].iloc[-2])
+        pdl = int(df['Low'].iloc[-2])
+        close = df['Close'].iloc[-1]
+        prev_close = df['Close'].iloc[-2]
+
+        move = round(close - prev_close, 2)
+        pct = round((move / prev_close) * 100, 2)
+        pivot = int((pdh + pdl + prev_close) / 3)
+
+        if pdh <= pdl:
+            return None
+
+        # Better trend classification
+        if pct > 1:
+            trend = "Strong Bullish"
+        elif pct > 0.3:
+            trend = "Mild Bullish"
+        elif pct > -0.3:
+            trend = "Sideways"
+        elif pct > -1:
+            trend = "Mild Bearish"
+        else:
+            trend = "Strong Bearish"
+
+        return pdh, pdl, pivot, move, pct, trend
+
+    except Exception as e:
+        print("Index calc error:", e)
+        return None
 
 
-def levels(df):
-    if df is None:
-        return None, None, None
+# =========================
+# GLOBAL NEWS (RSS)
+# =========================
+def get_global_news():
+    feeds = [
+        "http://feeds.reuters.com/reuters/businessNews",
+        "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+        "https://feeds.bloomberg.com/markets/news.rss"
+    ]
+
+    news = []
+
+    for feed in feeds:
+        try:
+            parsed = feedparser.parse(feed)
+            for entry in parsed.entries[:2]:
+                news.append(entry.title)
+        except:
+            continue
+
+    return news[:4] if news else ["No major news available"]
+
+
+# =========================
+# EVENTS (FILTERED)
+# =========================
+def get_events():
+    today = datetime.utcnow().date()
+    events = []
+
     try:
-        h = float(df["High"].iloc[-2])
-        l = float(df["Low"].iloc[-2])
-        c = float(df["Close"].iloc[-2])
-        pivot = (h + l + c) / 3
-        return int(h), int(l), int(round(pivot, 0))
-    except:
-        return None, None, None
+        url = "https://api.tradingeconomics.com/calendar?c=guest:guest&f=json"
+        res = requests.get(url, timeout=5).json()
+
+        for e in res:
+            try:
+                event_date = datetime.strptime(e['Date'][:10], "%Y-%m-%d").date()
+                if event_date >= today:
+                    events.append(f"{e['Event']} ({e['Country']}) → {event_date}")
+            except:
+                continue
+
+    except Exception as e:
+        print("Event fetch error:", e)
+        return ["⚠️ Event data unavailable"]
+
+    return events[:4] if events else ["✅ No major events today"]
 
 
-def fmt(pct, pts):
-    if pct is None or pts is None:
-        return "NA"
-    sign = "+" if pts > 0 else ""
-    return f"{sign}{pts} ({pct}%)"
-
-
-def fmt_clean(pct):
-    if pct is None:
-        return "NA"
-    sign = "+" if pct > 0 else ""
-    return f"{sign}{pct}%"
-
-
-# ===========================
+# =========================
 # INDIA REPORT
-# ===========================
-def india():
+# =========================
+def india_report():
+    now = datetime.now(IST)
+    print("Running INDIA report:", now)
 
-    nifty = fetch("^NSEI")
-    bank = fetch("^NSEBANK")
-    sensex = fetch("^BSESN")
+    nifty = get_index("^NSEI")
 
-    n_pct, n_pts = change(nifty)
-    b_pct, b_pts = change(bank)
-    s_pct, s_pts = change(sensex)
+    if nifty is None:
+        send_telegram("❌ NIFTY DATA ERROR – NO TRADE")
+        return
 
-    n_pdh, n_pdl, n_pivot = levels(nifty)
-    b_pdh, b_pdl, b_pivot = levels(bank)
-    s_pdh, s_pdl, s_pivot = levels(sensex)
+    pdh, pdl, pivot, move, pct, trend = nifty
 
-    # ADR
-    hdfc_pct, _ = change(fetch("HDB"))
-    icici_pct, _ = change(fetch("IBN"))
-    infy_pct, _ = change(fetch("INFY"))
-    wipro_pct, _ = change(fetch("WIT"))
+    news = get_global_news()
+    events = get_events()
 
-    banking_bias = "WEAK" if (icici_pct and icici_pct < 0) else "MIXED"
+    mid = (pdh + pdl) // 2
 
-    # GLOBAL
-    dow = change(fetch("^DJI"))
-    nasdaq = change(fetch("^IXIC"))
-    btc_pct, _ = change(fetch("BTC-USD"))
-
-    # COMMODITIES
-    gold = change(fetch("GC=F"))
-    silver = change(fetch("SI=F"))
-    crude = change(fetch("CL=F"))
-
-    # BIAS
-    bias = "BEARISH" if n_pct and n_pct < 0 else "BULLISH"
-    condition = "EXTENDED" if n_pct and abs(n_pct) > 1 else "NORMAL"
-    trend = "Weak" if bias == "BEARISH" else "Strong"
-
-    # SCORE
-    score = 0
-    if n_pct: score += -0.4 if n_pct < 0 else 0.4
-    if dow[0]: score += -0.2 if dow[0] < 0 else 0.2
-    if btc_pct: score += -0.2 if btc_pct < 0 else 0.2
-    if nasdaq[0]: score += 0.1 if nasdaq[0] > 0 else -0.1
-
-    score = round(score, 2)
-
-    if score > 0.3:
-        score_bias = "BULLISH"
-        confidence = "HIGH"
-    elif score < -0.3:
-        score_bias = "BEARISH"
-        confidence = "HIGH"
-    else:
-        score_bias = "NEUTRAL"
-        confidence = "LOW"
-
-    # ALIGNMENT STRENGTH (NEW)
-    if bias == score_bias:
-        alignment = "STRONG"
-    else:
-        alignment = "MODERATE"
-
-    # SUPPORT / RES
-    n_support = f"{n_pdl} / {n_pdl - 200 if n_pdl else 'NA'}"
-    n_resist = f"{n_pdh} / {n_pdh + 200 if n_pdh else 'NA'}"
-    b_support = f"{b_pdl} / {b_pdl - 400 if b_pdl else 'NA'}"
-    b_resist = f"{b_pdh} / {b_pdh + 400 if b_pdh else 'NA'}"
-    s_support = f"{s_pdl} / {s_pdl - 500 if s_pdl else 'NA'}"
-    s_resist = f"{s_pdh} / {s_pdh + 500 if s_pdh else 'NA'}"
-
-    return f"""🇮🇳 INDIA MARKET OUTLOOK (8:45 AM IST)
+    msg = f"""🇮🇳 INDIA MARKET OUTLOOK ({now.strftime('%I:%M %p IST')})
 
 🌍 Global News
-- Fed delaying rate cuts
-- Bond yields rising
-- China demand weak
-- Oil cooling
+- {news[0]}
+- {news[1]}
+- {news[2] if len(news)>2 else ""}
 
-📅 EVENTS (IST)
-US CPI → 10 Apr 2026 | 08:00 PM  
-Jobless Claims → 09 Apr 2026 | 06:00 PM  
-Fed Speakers → 09–11 Apr | Evening  
-India CPI → 12 Apr 2026 | 05:30 PM  
+📅 EVENTS
+{chr(10).join(events)}
 
-👉 Event Risk: HIGH
-
---------------------------------------------------
-
-🌐 ADR (Overnight Proxy)
-
-HDFC: {fmt_clean(hdfc_pct)}  
-ICICI: {fmt_clean(icici_pct)}  
-INFY: {fmt_clean(infy_pct)}  
-WIPRO: {fmt_clean(wipro_pct)}  
-
-👉 Interpretation:
-Banking: {banking_bias}
-
---------------------------------------------------
-
-📉 MARKET STRUCTURE
-
-NIFTY
-Move: {fmt(n_pct, n_pts)}
-PDH: {n_pdh} | PDL: {n_pdl} | Pivot: {n_pivot}
-Support: {n_support}
-Resistance: {n_resist}
+📉 NIFTY STRUCTURE
+Move: {move} ({pct}%)
+PDH: {pdh} | PDL: {pdl} | Pivot: {pivot}
 Trend: {trend}
 
-BANKNIFTY
-Move: {fmt(b_pct, b_pts)}
-PDH: {b_pdh} | PDL: {b_pdl} | Pivot: {b_pivot}
-Support: {b_support}
-Resistance: {b_resist}
-Trend: {trend}
+🎯 EXECUTION
 
-SENSEX
-Move: {fmt(s_pct, s_pts)}
-PDH: {s_pdh} | PDL: {s_pdl} | Pivot: {s_pivot}
-Support: {s_support}
-Resistance: {s_resist}
-Trend: {trend}
+Sell near {pdh} IF rejection  
+Buy above {pdh} IF breakout  
+Sell below {pdl} IF breakdown  
 
---------------------------------------------------
-
-🪙 COMMODITIES
-
-Gold: {fmt(*gold)}
-Silver: {fmt(*silver)}
-Crude: {fmt(*crude)}
-
---------------------------------------------------
-
-📊 SECTOR STRENGTH
-
-Strong: IT, Pharma  
-Weak: Banking, Metals  
-
---------------------------------------------------
-
-📊 SCORE MODEL
-
-Score: {score}  
-Bias: {score_bias}  
-Confidence: {confidence}  
-
---------------------------------------------------
-
-🎯 EXECUTION PLAN
-
-🔥 A-SETUP — REJECTION
-
-Sell near {n_pdh} ONLY IF:
-- Rejection (wick + close below)
-
-Entry: Below rejection candle  
-SL: Above rejection candle high + 10–20 buffer  
-
---------------------------------------------------
-
-🚀 B-SETUP — BREAKDOWN
-
-Sell below {n_pdl} ONLY IF:
-- Strong breakdown
-
-Entry: Breakdown / retest  
-SL: Above breakdown candle OR above PDL  
-
---------------------------------------------------
-
-🟢 REVERSAL (LOW PROBABILITY)
-
-Buy above {n_pdh} ONLY IF:
-- Strong breakout + sustain  
-
-SL: Below PDH  
-
---------------------------------------------------
-
-❌ NO TRADE ZONE
-
-{n_pdl + 50 if n_pdl else 'NA'} – {n_pdh - 50 if n_pdh else 'NA'}
-
---------------------------------------------------
-
-🧠 TRIGGER LOGIC
-
-Rejection = Wick + close below  
-Breakout = Close above + sustain  
-Breakdown = Close below + continuation  
-
---------------------------------------------------
-
-🛡️ RISK MANAGEMENT
-
-- Risk per trade: 1–2%  
-- Trade only if SL defined  
-- Avoid random entries  
-
---------------------------------------------------
-
-⚠️ EVENT EXECUTION RULE
-
-- Avoid new trades 30–60 min before major events  
-- Expect volatility spikes  
-- Prefer A-setup only on event days  
-
---------------------------------------------------
-
-🔗 MARKET ALIGNMENT
-
-India: {bias}  
-Score: {score_bias}  
-US: Mixed  
-BTC: Refer below  
-
-👉 Alignment Strength: {alignment}
-
---------------------------------------------------
-
-🎯 FINAL CALL
-
-🔥 ONLY TRADE:
-
-Sell near {n_pdh} IF rejection confirms  
-AND score supports downside  
-
-⚠️ Event Day Adjustment:
-Prefer A-setup only  
-
-Else → No trade  
-
-⚠️ If price stays inside range → Skip day  
+❌ No Trade Zone: {mid - 50} – {mid + 50}
 
 🧠 Rule:
-Confluence > Prediction
+No confirmation → No trade
 """
 
+    send_telegram(msg)
 
-# ===========================
-# US REPORT
-# ===========================
-def us():
 
-    dow = change(fetch("^DJI"))
-    nasdaq = change(fetch("^IXIC"))
-    spx = change(fetch("^GSPC"))
+# =========================
+# US + BTC REPORT
+# =========================
+def us_report():
+    now = datetime.now(IST)
+    print("Running US report:", now)
 
-    btc_df = fetch("BTC-USD")
-    btc_pct, btc_pts = change(btc_df)
-    pdh, pdl, pivot = levels(btc_df)
+    btc = get_btc_levels()
 
-    trend = "BULLISH" if btc_pct and btc_pct > 0 else "BEARISH"
+    if btc is None:
+        send_telegram("❌ BTC DATA ERROR – NO TRADE")
+        return
 
-    return f"""🌙 US MARKET PREP (7:00 PM IST)
+    pdh, pdl, pivot, move, trend = btc
 
-🌍 Global Setup
-Asia: Mixed  
-Europe: Flat  
+    mid = (pdh + pdl) // 2
 
---------------------------------------------------
-
-🇺🇸 US MARKET STRUCTURE
-
-DOW: {fmt(*dow)}  
-NASDAQ: {fmt(*nasdaq)}  
-S&P 500: {fmt(*spx)}  
-
---------------------------------------------------
+    msg = f"""🌙 US MARKET PREP ({now.strftime('%I:%M %p IST')})
 
 🪙 BTC STRUCTURE
-
-Move: {fmt(btc_pct, btc_pts)}
-
-PDH: {pdh}  
-PDL: {pdl}  
+Move: {move}
+PDH: {pdh}
+PDL: {pdl}
 Pivot: {pivot}
-
 Trend: {trend}
 
---------------------------------------------------
+🎯 EXECUTION
 
-🎯 BTC EXECUTION
+Buy above {pdh}  
+Sell below {pdl}
 
-Buy above {pdh} (breakout)  
-Sell below {pdl} (breakdown)  
-
-SL:
-Breakout → below PDH  
-Breakdown → above PDL  
-
---------------------------------------------------
-
-❌ NO TRADE ZONE
-
-{pdl + 100 if pdl else 'NA'} – {pdh - 100 if pdh else 'NA'}
-
---------------------------------------------------
-
-🛡️ RISK
-
-- Trade only breakout  
-- Avoid range  
-
---------------------------------------------------
-
-🔗 MARKET ALIGNMENT
-
-India: Refer morning bias  
-US: Mixed  
-BTC: {trend}  
-
---------------------------------------------------
-
-🎯 FINAL CALL
-
-🔥 ONLY TRADE:
-
-Trade breakout levels only  
-
-⚠️ Avoid:
-Mid-range  
+❌ No Trade Zone: {mid - 100} – {mid + 100}
 
 🧠 Rule:
-No breakout → No trade
+Breakout only → No breakout = No trade
 """
 
-
-# ===========================
-# MAIN
-# ===========================
-def main():
-    print("BOT STARTED")
-    send(india())
-    send(us())
+    send_telegram(msg)
 
 
+# =========================
+# MAIN CONTROL (TIME SAFE)
+# =========================
 if __name__ == "__main__":
-    main()
+    now = datetime.now(IST)
+    print("=== BOT STARTED ===", now)
+
+    try:
+        hour = now.hour
+
+        if 7 <= hour <= 11:
+            india_report()
+        elif 16 <= hour <= 21:
+            us_report()
+        else:
+            print("No valid execution window")
+
+    except Exception as e:
+        print("FATAL ERROR:", e)
+        send_telegram(f"❌ BOT ERROR: {e}")
