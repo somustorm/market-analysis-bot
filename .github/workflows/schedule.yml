@@ -2,11 +2,11 @@ name: Market Bot
 
 on:
   schedule:
-    # 🇮🇳 India Report (8:40 AM IST)
-    - cron: "10 3 * * *"
+    # 🇮🇳 India Report (8:45 AM IST)
+    - cron: "15 3 * * *"
 
-    # 🌙 US Report (7:00 PM IST)
-    - cron: "30 13 * * *"
+    # 🌙 US Report (6:45 PM IST)
+    - cron: "15 13 * * *"
 
   workflow_dispatch:
 
@@ -20,34 +20,28 @@ jobs:
       CHAT_ID: ${{ secrets.CHAT_ID }}
 
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: 🐍 Setup Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: 📦 Install dependencies
+      - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install yfinance pandas requests pytz feedparser
 
-      - name: 🔍 Debug Environment Variables
-        run: |
-          echo "Checking environment variables..."
-          if [ -z "$TELEGRAM_TOKEN" ]; then echo "❌ TELEGRAM_TOKEN missing"; else echo "✅ TELEGRAM_TOKEN present"; fi
-          if [ -z "$CHAT_ID" ]; then echo "❌ CHAT_ID missing"; else echo "✅ CHAT_ID present"; fi
-
-      - name: ⏱ Print System Time
+      - name: Print Time (Debug)
         run: |
           echo "UTC Time:"
           date -u
           echo "IST Time:"
           TZ="Asia/Kolkata" date
 
-      - name: 🚀 Run Bot
+      - name: Run bot
         run: |
-          echo "Starting bot..."
+          echo "Running bot..."
           python bot.py
-          echo "Bot finished."
+          echo "Done."
